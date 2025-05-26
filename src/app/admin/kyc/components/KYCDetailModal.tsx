@@ -94,6 +94,8 @@ export function KYCDetailModal({
     }
   };
 
+  const isValidPhotoUrl = kycItem.photoUrl && kycItem.photoUrl !== "placeholder_for_actual_storage_url" && (kycItem.photoUrl.startsWith('http') || kycItem.photoUrl.startsWith('/') || kycItem.photoUrl.startsWith('data:'));
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -118,7 +120,7 @@ export function KYCDetailModal({
               <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 mb-1">
                 <FileWarning className="h-4 w-4"/>Government ID Photo
               </Label>
-              {kycItem.photoUrl ? (
+              {isValidPhotoUrl ? (
                  <div className="relative aspect-video w-full rounded-md border border-dashed overflow-hidden">
                     <Image src={kycItem.photoUrl} alt={`ID Photo for ${kycItem.fullName}`} fill className="object-contain" data-ai-hint="document identification" />
                 </div>
@@ -140,6 +142,17 @@ export function KYCDetailModal({
                     {kycItem.status.replace("_", " ").toUpperCase()}
                 </Badge>
             </div>
+
+             {/* Conditional rendering for AI Risk Assessment (removed as per previous request) */}
+             {/* If AI Risk was to be shown, it would be here, checking for kycItem.riskAssessment */}
+             {/* For now, we can add a simple placeholder or note about manual review */}
+            <Alert className="mt-4">
+                <AlertOctagon className="h-4 w-4" />
+                <AlertTitle>Manual Review Required</AlertTitle>
+                <AlertDescription>
+                    AI-powered risk assessment is not currently active. Please review the submitted details carefully.
+                </AlertDescription>
+            </Alert>
 
             {(kycItem.status === "pending_review" || kycItem.status === "rejected") && (
               <div className="space-y-2 pt-4">
