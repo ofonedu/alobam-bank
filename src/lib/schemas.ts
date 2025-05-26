@@ -43,17 +43,13 @@ export const KYCFormSchema = z.object({
   dateOfBirth: z.coerce.date({
     required_error: "Date of birth is required.",
     invalid_type_error: "Invalid date. Please use the calendar or enter in a recognizable format (e.g., YYYY-MM-DD, MM/DD/YYYY).",
-  }).transform(date => {
-    // Check if the date is valid after coercion
-    if (isNaN(date.getTime())) {
-        // This should ideally be caught by `coerce.date` itself with `invalid_type_error`
-        // but as a defensive measure, we can re-check.
-        // However, Zod's `transform` runs *after* successful parsing by `coerce.date`.
-        // So, if `date` is invalid here, it's an unexpected state.
-        // For robust error handling, this scenario means `coerce.date` might have issues.
-        // A direct throw here might not be the best Zod way; errors are best handled by Zod's internal mechanisms.
-        // Let's rely on coerce.date's error reporting. The transform assumes a valid Date object.
-    }
+  })
+  .refine((date) => !isNaN(date.getTime()), {
+    // This message is shown if coerce.date results in an "Invalid Date" object
+    message: "The entered date is invalid. Please check the year, month, and day (e.g., ensure February doesn't have 30 days).",
+  })
+  .transform(date => {
+    // At this point, date is a valid Date object.
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
@@ -268,3 +264,6 @@ export const FooterContentSchema = z.object({
   footerSocialMediaLinks: z.array(SocialMediaLinkSchema).optional(),
 });
 export type FooterContentFormData = z.infer<typeof FooterContentSchema>;
+
+
+    
