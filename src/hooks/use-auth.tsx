@@ -143,7 +143,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         accountType: data.accountType,
         currency: data.currency,
         kycStatus: "not_started",
-        role: "user",
+        role: data.email === "admin@wohana.com" ? "admin" : "user", // Assign admin role for specific email
         balance: initialBalance,
         accountNumber: newAccountNumber,
         isFlagged: false,
@@ -233,3 +233,4 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
+    
