@@ -27,6 +27,7 @@ export default function AdminLayout({
 }) {
   const { user, loading, userProfile } = useAuth();
   const router = useRouter();
+  const currentYear = new Date().getFullYear();
 
   const isUserAdmin = userProfile?.role === 'admin';
 
@@ -54,7 +55,7 @@ export default function AdminLayout({
       <div className="flex min-h-screen bg-background text-foreground">
         <Sidebar collapsible="icon" className="border-r bg-sidebar text-sidebar-foreground">
           <SidebarHeader className="p-4">
-            <AppLogo />
+            <AppLogo colorVariant="sidebar" />
           </SidebarHeader>
           <SidebarContent className="p-2">
             <DashboardNav isAdmin={true} />
@@ -74,10 +75,12 @@ export default function AdminLayout({
                 <UserNav />
             </div>
           </header>
-          {/* Changed inner <main> to <div> for semantic correctness and applied flex for content growth */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {children}
           </div>
+          <footer className="p-4 text-center text-xs text-muted-foreground border-t border-border">
+            © {currentYear} Wohana Funds. All rights reserved.
+          </footer>
         </SidebarInset>
       </div>
     </SidebarProvider>

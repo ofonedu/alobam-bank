@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ShieldCheck, Banknote, Landmark, DraftingCompass, type LucideProps } from 'lucide-react';
 import { getPlatformSettingsAction } from '@/lib/actions/admin-settings-actions';
 import type { PlatformSettings } from '@/types';
+import { cn } from '@/lib/utils';
 
 // Define a type for the icon map keys
 type IconName = "ShieldCheck" | "Banknote" | "Landmark" | "DraftingCompass" | "Default";
@@ -19,7 +20,12 @@ const LucideIconResolver: Record<IconName, React.FC<LucideProps>> = {
   Default: ShieldCheck, // Fallback icon
 };
 
-export function AppLogo() {
+interface AppLogoProps {
+  colorVariant?: 'primary' | 'sidebar';
+  className?: string;
+}
+
+export function AppLogo({ colorVariant = 'primary', className }: AppLogoProps) {
   const [logoText, setLogoText] = useState("Wohana Funds");
   const [logoIconName, setLogoIconName] = useState<IconName>("ShieldCheck");
   const [isLoading, setIsLoading] = useState(true);
@@ -43,10 +49,15 @@ export function AppLogo() {
 
   const IconComponent = LucideIconResolver[logoIconName] || LucideIconResolver.Default;
 
+  const colorClasses = colorVariant === 'sidebar'
+    ? 'text-sidebar-foreground hover:text-sidebar-foreground/90'
+    : 'text-primary hover:text-primary/90';
+
   if (isLoading) {
     // Render a simple placeholder during loading to avoid layout shifts
+    // Using the determined color class for consistency even in loading state
     return (
-      <div className="flex items-center gap-2 text-primary">
+      <div className={cn("flex items-center gap-2", colorClasses, className)}>
         <ShieldCheck className="h-7 w-7" />
         <span className="text-xl font-semibold">Wohana Funds</span>
       </div>
@@ -54,7 +65,7 @@ export function AppLogo() {
   }
 
   return (
-    <Link href="/" className="flex items-center gap-2 text-primary hover:text-primary/90 transition-colors">
+    <Link href="/" className={cn("flex items-center gap-2 transition-colors", colorClasses, className)}>
       <IconComponent className="h-7 w-7" />
       <span className="text-xl font-semibold">{logoText}</span>
     </Link>
