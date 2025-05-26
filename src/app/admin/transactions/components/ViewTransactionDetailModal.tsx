@@ -41,11 +41,14 @@ const TransactionStatusBadge = ({ status }: { status: Transaction["status"] }) =
 };
 
 const TransactionTypeBadge = ({ type }: { type: Transaction["type"] }) => {
-  const typeName = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  let typeName = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  if (type === 'manual_credit' || type === 'credit') typeName = 'Credit';
+  else if (type === 'manual_debit' || type === 'debit') typeName = 'Debit';
+  
   let className = "capitalize";
-  if (type === 'manual_debit' || type === 'withdrawal' || type === 'fee' || type === 'loan_repayment' || type === 'transfer') { 
+  if (['debit', 'manual_debit', 'withdrawal', 'fee', 'loan_repayment', 'transfer'].includes(type)) {
     className += " text-red-600";
-  } else if (type === 'manual_credit' || type === 'deposit' || type === 'loan_disbursement') {
+  } else if (['credit', 'manual_credit', 'deposit', 'loan_disbursement'].includes(type)) {
     className += " text-green-600";
   }
   return <span className={className}>{typeName}</span>;

@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -84,7 +85,13 @@ export const columns: ColumnDef<Transaction>[] = [
   {
     accessorKey: "type",
     header: "Type",
-    cell: ({row}) => <span className="capitalize">{row.getValue("type")}</span>
+    cell: ({ row }) => {
+      const type = row.getValue("type") as string;
+      let typeName = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      if (type === 'manual_credit' || type === 'credit') typeName = 'Credit';
+      else if (type === 'manual_debit' || type === 'debit') typeName = 'Debit';
+      return <span className="capitalize">{typeName}</span>;
+    }
   },
   {
     accessorKey: "status",

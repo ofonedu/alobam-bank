@@ -176,7 +176,7 @@ export async function issueManualAdjustmentAction(
 
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
-    const transactionType = type === "credit" ? "manual_credit" : "manual_debit";
+    const transactionType = type === "credit" ? "credit" : "debit"; // Changed from manual_credit/manual_debit
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
@@ -205,12 +205,12 @@ export async function issueManualAdjustmentAction(
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
         date: Timestamp.now(),
-        description: `Manual ${type}: ${description} (Admin: ${adminUserId || 'System'})`,
+        description: description, // Use admin-provided description directly
         amount: adjustmentAmount,
         type: transactionType,
         status: "completed",
         currency: userCurrency, 
-        notes: `Admin action by ${adminUserId || 'System'}. User: ${userName || targetUserId}.`
+        notes: `Manual adjustment by admin: ${adminUserId || 'System'}. User: ${userName || targetUserId}. Original input description: ${description}`
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData); 
       return { transactionId: transactionDocRef.id, newBalance }; 
@@ -299,7 +299,7 @@ export async function generateRandomTransactionsAction(
     const transactionsColRef = collection(db, "transactions");
 
     const descriptions = ["Online Purchase", "Service Fee", "Subscription", "Refund Recieved", "Cash Deposit", "Utility Bill", "Salary Payment", "Loan Interest", "Investment Dividend", "Miscellaneous Credit", "Miscellaneous Debit"];
-    const types: TransactionType['type'][] = ["withdrawal", "fee", "deposit", "manual_credit", "manual_debit", "transfer"];
+    const types: TransactionType['type'][] = ["withdrawal", "fee", "deposit", "credit", "debit", "transfer"]; // Updated types
     const statuses: TransactionType['status'][] = ["completed", "pending", "failed"];
 
     let totalAmountGenerated = 0;
@@ -308,7 +308,7 @@ export async function generateRandomTransactionsAction(
       const randomType = types[Math.floor(Math.random() * types.length)];
       let randomAmount = Math.random() * 500 + 5; 
       
-      if (["withdrawal", "fee", "manual_debit"].includes(randomType) || (randomType === "transfer" && Math.random() < 0.5)) {
+      if (["withdrawal", "fee", "debit"].includes(randomType) || (randomType === "transfer" && Math.random() < 0.5)) { // Updated types
         randomAmount = -Math.abs(randomAmount);
       } else {
         randomAmount = Math.abs(randomAmount);

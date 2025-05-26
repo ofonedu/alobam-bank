@@ -127,6 +127,12 @@ export default function DashboardPage() {
     if (value === undefined || value === null) return "N/A";
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
+  
+  const formatTransactionType = (type: Transaction["type"]) => {
+    if (type === 'manual_credit' || type === 'credit') return 'Credit';
+    if (type === 'manual_debit' || type === 'debit') return 'Debit';
+    return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
 
   return (
     <div className="space-y-6">
@@ -245,7 +251,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="font-medium">{transaction.description}</p>
                       <div className="text-xs text-muted-foreground">
-                        {formatDateDisplay(transaction.date)} - <span className="capitalize">{transaction.type.replace("_", " ")}</span> - <Badge variant={transaction.status === 'completed' ? 'default' : transaction.status === 'pending' ? 'secondary' : 'destructive'} className="text-xs">{transaction.status}</Badge>
+                        {formatDateDisplay(transaction.date)} - <span className="capitalize">{formatTransactionType(transaction.type)}</span> - <Badge variant={transaction.status === 'completed' ? 'default' : transaction.status === 'pending' ? 'secondary' : 'destructive'} className="text-xs">{transaction.status}</Badge>
                       </div>
                     </div>
                     <span className={`font-semibold ${transaction.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
