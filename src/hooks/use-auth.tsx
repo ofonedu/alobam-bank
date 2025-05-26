@@ -132,10 +132,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const initialBalance = 0; 
       const constructedDisplayName = `${data.firstName} ${data.lastName}`;
       
-      // Determine account type, providing a default if none selected (e.g., for initial admin setup)
-      const chosenAccountType = data.accountType || 
-                               (data.email === "admin@wohana.com" ? "admin_default_type" : "user_default_type");
-
       const newUserProfileData: UserProfile = {
         uid: newUser.uid,
         email: newUser.email,
@@ -144,7 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         displayName: constructedDisplayName,
         photoURL: null, 
         phoneNumber: data.phoneNumber,
-        accountType: chosenAccountType,
+        accountType: data.accountType, // Reverted: Directly use data.accountType
         currency: data.currency,
         kycStatus: "not_started",
         role: data.email === "admin@wohana.com" ? "admin" : "user", 
