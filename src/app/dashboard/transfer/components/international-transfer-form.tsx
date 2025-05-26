@@ -35,6 +35,8 @@ export function InternationalTransferForm() {
   const [isSubmittingInitialForm, setIsSubmittingInitialForm] = useState(false);
 
   const [currentTransferData, setCurrentTransferData] = useState<InternationalTransferData | null>(null);
+  const [collectedAuthCodes, setCollectedAuthCodes] = useState<{cotCode?: string; imfCode?: string; taxCode?: string}>({});
+
   const [showCOTDialog, setShowCOTDialog] = useState(false);
   const [showIMFDialog, setShowIMFDialog] = useState(false);
   const [showTaxDialog, setShowTaxDialog] = useState(false);
@@ -83,6 +85,7 @@ export function InternationalTransferForm() {
 
   const resetTransferFlow = () => {
     setCurrentTransferData(null);
+    setCollectedAuthCodes({});
     setShowCOTDialog(false);
     setShowIMFDialog(false);
     setShowTaxDialog(false);
@@ -90,28 +93,32 @@ export function InternationalTransferForm() {
     setIsSubmittingInitialForm(false);
   };
 
-  const proceedToNextStep = (currentStep: 'initial' | 'cot' | 'imf' | 'tax') => {
-    if (!platformSettings) {
-        toast({ title: "Error", description: "Transfer settings not loaded.", variant: "destructive" });
-        resetTransferFlow();
-        return;
+  const proceedToNextStep = () => {
+    if (!currentTransferData || !platformSettings) {
+      resetTransferFlow();
+      return;
     }
 
-    if (currentStep === 'initial' && platformSettings.requireCOTConfirmation) {
-        setShowCOTDialog(true);
-    } else if ((currentStep === 'initial' && !platformSettings.requireCOTConfirmation) || currentStep === 'cot') {
-        if (platformSettings.requireIMFAuthorization) {
-            setShowIMFDialog(true);
-        } else {
-            proceedToNextStep('imf'); 
-        }
-    } else if (currentStep === 'imf') {
-        if (platformSettings.requireTaxClearance) {
-            setShowTaxDialog(true);
-        } else {
-            handleTaxCleared(); 
-        }
+    if (platformSettings.requireCOTConfirmation && !showCOTDialog && !collectedAuthCodes.cotCode) {
+      setShowCOTDialog(true);
+      return;
     }
+    if (platformSettings.requireIMFAuthorization && !showIMFDialog && !collectedAuthCodes.imfCode) {
+      setShowCOTDialog(false);
+      setShowIMFDialog(true);
+      return;
+    }
+    if (platformSettings.requireTaxClearance && !showTaxDialog && !collectedAuthCodes.taxCode) {
+      setShowCOTDialog(false);
+      setShowIMFDialog(false);
+      setShowTaxDialog(true);
+      return;
+    }
+
+    setShowCOTDialog(false);
+    setShowIMFDialog(false);
+    setShowTaxDialog(false);
+    finalizeTransfer();
   };
 
   const onSubmitHandler = async (values: InternationalTransferData) => {
@@ -140,33 +147,36 @@ export function InternationalTransferForm() {
     }
 
     setCurrentTransferData(values);
-    proceedToNextStep('initial');
+    setTimeout(() => proceedToNextStep(), 0);
   };
 
-  const handleCOTEConfirmed = () => {
+  const handleCOTEConfirmed = (cotCode: string) => {
+    setCollectedAuthCodes(prev => ({ ...prev, cotCode }));
     setShowCOTDialog(false);
-    proceedToNextStep('cot');
+    proceedToNextStep();
   };
 
   const handleIMFAuthorized = (imfCode: string) => {
-    console.log("IMF Code:", imfCode, "For Transfer:", currentTransferData);
+    setCollectedAuthCodes(prev => ({ ...prev, imfCode }));
     setShowIMFDialog(false);
-    proceedToNextStep('imf');
+    proceedToNextStep();
   };
 
-  const handleTaxCleared = async (taxFile?: File) => {
+  const handleTaxCodeEntered = async (taxCode: string) => { // Changed from handleTaxCleared
+    setCollectedAuthCodes(prev => ({ ...prev, taxCode }));
     setShowTaxDialog(false);
-    if (!user || !currentTransferData) {
+    proceedToNextStep();
+  };
+
+  const finalizeTransfer = async () => {
+     if (!user || !currentTransferData) {
       toast({ title: "Error", description: "Transfer details missing. Please start over.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
-    setIsSubmittingInitialForm(true); 
+    setIsSubmittingInitialForm(true);
 
-    const result = await recordTransferAction(user.uid, currentTransferData, {
-      imfCode: "mock_imf_code_provided", 
-      taxDocumentName: taxFile?.name,
-    });
+    const result = await recordTransferAction(user.uid, currentTransferData, collectedAuthCodes);
 
     if (result.success) {
       toast({
@@ -183,7 +193,7 @@ export function InternationalTransferForm() {
       });
     }
     resetTransferFlow();
-  };
+  }
 
   const handleAuthorizationCancel = () => {
     toast({
@@ -346,21 +356,21 @@ export function InternationalTransferForm() {
         <>
           <COTConfirmationDialog
             isOpen={showCOTDialog}
-            onOpenChange={(isOpen) => { if (!isOpen && !showIMFDialog && !showTaxDialog) resetTransferFlow(); else setShowCOTDialog(isOpen); }}
+            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowCOTDialog(open); }}
             transferData={currentTransferData}
             onConfirm={handleCOTEConfirmed}
             onCancel={handleAuthorizationCancel}
           />
           <IMFAuthorizationDialog
             isOpen={showIMFDialog}
-            onOpenChange={(isOpen) => { if (!isOpen && !showTaxDialog) resetTransferFlow(); else setShowIMFDialog(isOpen); }}
+            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowIMFDialog(open);}}
             onConfirm={handleIMFAuthorized}
             onCancel={handleAuthorizationCancel}
           />
           <TaxClearanceDialog
             isOpen={showTaxDialog}
-            onOpenChange={(isOpen) => { if (!isOpen) resetTransferFlow(); else setShowTaxDialog(isOpen); }}
-            onConfirm={handleTaxCleared}
+            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowTaxDialog(open);}}
+            onConfirm={handleTaxCodeEntered}
             onCancel={handleAuthorizationCancel}
           />
         </>

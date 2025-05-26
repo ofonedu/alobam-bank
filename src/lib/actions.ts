@@ -139,8 +139,9 @@ interface RecordTransferResult {
 }
 
 interface AuthorizationDetails {
+  cotCode?: string;
   imfCode?: string;
-  taxDocumentName?: string;
+  taxCode?: string;
 }
 
 export async function recordTransferAction(
@@ -163,7 +164,7 @@ export async function recordTransferAction(
         throw new Error("User profile not found.");
       }
       const userProfileData = userDoc.data() as UserProfile;
-      userEmail = userProfileData.email; // Capture email for notification
+      userEmail = userProfileData.email; 
 
       const currentBalance = userProfileData.balance;
       if (currentBalance < totalDeduction) {
@@ -178,10 +179,10 @@ export async function recordTransferAction(
         userId,
         date: Timestamp.now(),
         description: `Transfer to ${transferData.recipientName}`,
-        amount: -transferData.amount, // Store as negative for debit
+        amount: -transferData.amount, 
         type: "transfer",
         status: "completed",
-        currency: 'currency' in transferData ? transferData.currency : "USD", // Default to USD for local
+        currency: 'currency' in transferData ? transferData.currency : "USD", 
         recipientDetails: {
           name: transferData.recipientName,
           accountNumber: 'recipientAccountNumber' in transferData ? transferData.recipientAccountNumber : transferData.recipientAccountNumberIBAN,
@@ -191,8 +192,10 @@ export async function recordTransferAction(
         },
         authorizationDetails: {
           cot: parseFloat(cotAmount.toFixed(2)),
-          imfCodeProvided: !!authorizations.imfCode,
-          taxDocumentName: authorizations.taxDocumentName,
+          cotCode: authorizations.cotCode,
+          imfCodeProvided: !!authorizations.imfCode, // True if imfCode is present
+          imfCode: authorizations.imfCode,
+          taxCode: authorizations.taxCode,
         },
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
@@ -200,7 +203,6 @@ export async function recordTransferAction(
       return { balance: updatedBalance, transactionId: transactionDocRef.id };
     });
 
-    // Send email notification for successful transfer
     if (userEmail && transactionResult.transactionId) {
       await sendTransactionalEmail({
         recipientEmail: userEmail,
@@ -275,12 +277,10 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
     const querySnapshot = await getDocs(q);
     const transactions: TransactionType[] = querySnapshot.docs.map((docSnap) => {
       const data = docSnap.data();
-      let transactionDate = new Date(); // Default to now if date is problematic
+      let transactionDate = new Date(); 
       if (data.date && typeof (data.date as Timestamp).toDate === 'function') {
         transactionDate = (data.date as Timestamp).toDate();
       } else if (data.date) {
-        // If it's already a JS Date (less likely from Firestore directly but good to handle)
-        // or if it's a string that can be parsed (more risky).
         try {
           const parsedDate = new Date(data.date);
           if (!isNaN(parsedDate.getTime())) {
@@ -488,5 +488,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
-

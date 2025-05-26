@@ -10,12 +10,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, FileUp, CheckCircle } from "lucide-react";
-import { useState, type ChangeEvent } from "react";
+import { Loader2, FileText } from "lucide-react"; // Changed icon from FileUp
+import { useState, useEffect } from "react";
 import type { TaxClearanceDialogProps } from "@/types";
 
 export function TaxClearanceDialog({
@@ -24,78 +23,74 @@ export function TaxClearanceDialog({
   onConfirm,
   onCancel,
 }: TaxClearanceDialogProps) {
-  const [file, setFile] = useState<File | undefined>(undefined);
+  const [taxCode, setTaxCode] = useState(""); // Changed from file to taxCode
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile) {
-      if (selectedFile.size > 5 * 1024 * 1024) { 
-        setError("File is too large. Max 5MB allowed.");
-        setFile(undefined);
-        return;
-      }
-      setError(null);
-      setFile(selectedFile);
-    } else {
-      setFile(undefined);
+  useEffect(() => {
+    if (!isOpen) {
+        setTaxCode("");
+        setError(null);
     }
-  };
+  }, [isOpen]);
 
   const handleConfirm = async () => {
-    if (!file) {
-      setError("Please upload your Tax Clearance certificate.");
+    if (!taxCode.trim()) { // Check if tax code is entered
+      setError("Please enter your Tax Clearance code.");
       return;
     }
     setError(null);
     setIsConfirming(true);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate API call or validation
+    await new Promise(resolve => setTimeout(resolve, 1500)); 
     setIsConfirming(false);
-    onConfirm(file);
+    onConfirm(taxCode); // Pass the tax code
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      if (!isConfirming) {
+        onCancel();
+      }
+    }
+    onOpenChange(open);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open) {
-        setFile(undefined);
-        setError(null);
-      }
-      onOpenChange(open);
-    }}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <FileUp className="mr-2 h-5 w-5 text-primary" />
-            Tax Clearance Certificate
+            <FileText className="mr-2 h-5 w-5 text-primary" /> {/* Changed icon */}
+            Tax Clearance Required
           </DialogTitle>
           <DialogDescription>
-            Please upload your Tax Clearance certificate for this transaction. (This is a mock step).
+            Please enter your Tax Clearance code for this transaction. If you don't have a code, please contact support.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="taxCertificate">Upload Certificate (PDF, PNG, JPG - Max 5MB)</Label>
+            <Label htmlFor="taxClearanceCode">Tax Clearance Code</Label>
             <Input
-              id="taxCertificate"
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg"
-              onChange={handleFileChange}
+              id="taxClearanceCode"
+              value={taxCode}
+              onChange={(e) => setTaxCode(e.target.value)}
+              placeholder="Enter Tax Clearance Code"
               disabled={isConfirming}
             />
-            {file && <p className="text-xs text-green-600 flex items-center"><CheckCircle className="h-4 w-4 mr-1"/>{file.name} selected.</p>}
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
+           <p className="text-xs text-muted-foreground">
+            This is a regulatory requirement for certain transactions. (This is a mock step).
+          </p>
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
-          <DialogClose asChild>
-            <Button variant="outline" onClick={onCancel} disabled={isConfirming}>
-              Cancel Transfer
-            </Button>
-          </DialogClose>
-          <Button onClick={handleConfirm} disabled={isConfirming || !file}>
+          <Button variant="outline" onClick={onCancel} disabled={isConfirming}>
+            Cancel Transfer
+          </Button>
+          <Button onClick={handleConfirm} disabled={isConfirming || !taxCode.trim()}>
             {isConfirming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Upload & Finalize Transfer
+            Submit & Finalize Transfer
           </Button>
         </DialogFooter>
       </DialogContent>

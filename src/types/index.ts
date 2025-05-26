@@ -34,7 +34,7 @@ export interface Transaction {
   date: Date | Timestamp; 
   description: string;
   amount: number;
-  type: "deposit" | "withdrawal" | "transfer" | "fee" | "manual_credit" | "manual_debit" | "loan_disbursement" | "loan_repayment";
+  type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment"; // Changed manual_credit/debit to credit/debit
   status: "pending" | "completed" | "failed";
   currency?: string;
   recipientDetails?: {
@@ -46,8 +46,10 @@ export interface Transaction {
   };
   authorizationDetails?: {
     cot?: number;
-    imfCodeProvided?: boolean;
-    taxDocumentName?: string;
+    cotCode?: string; // Added
+    imfCodeProvided?: boolean; // Kept, could be derived from imfCode existence
+    imfCode?: string; // Added
+    taxCode?: string; // Added, replaces taxDocumentName
   };
   relatedTransferId?: string;
   isFlagged?: boolean;
@@ -155,8 +157,6 @@ export interface PlatformSettings {
   platformLogoIcon?: string;
 }
 
-// EmailTemplate type removed
-
 // Landing Page Content Types
 export interface NavLinkItem {
   id?: string; // For useFieldArray key
@@ -261,7 +261,7 @@ export interface FooterContent {
   footerCopyright?: string;
   footerQuickLinkColumns?: FooterLinkColumn[];
   footerSocialMediaLinks?: SocialMediaLink[];
-  contactInfo?: { // Already present in default landing page, good to have here for CMS
+  contactInfo?: { 
     address?: string;
     phone?: string;
     email?: string;
@@ -324,7 +324,7 @@ export interface COTConfirmationDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   transferData: LocalTransferData | InternationalTransferData | null;
-  onConfirm: () => void;
+  onConfirm: (cotCode: string) => void; // cotCode added
   onCancel: () => void;
 }
 
@@ -338,7 +338,7 @@ export interface IMFAuthorizationDialogProps {
 export interface TaxClearanceDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (file?: File) => void;
+  onConfirm: (taxCode: string) => void; // Changed from file to taxCode string
   onCancel: () => void;
 }
 
@@ -393,5 +393,3 @@ export interface ProfileInfoItemProps {
   label: string;
   value: string | number | null | undefined;
 }
-
-    

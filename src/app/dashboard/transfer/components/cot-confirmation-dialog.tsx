@@ -10,8 +10,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { LocalTransferData, InternationalTransferData } from "@/lib/schemas";
@@ -25,6 +26,8 @@ export function COTConfirmationDialog({
   onCancel,
 }: COTConfirmationDialogProps) {
   const [isConfirming, setIsConfirming] = useState(false);
+  const [cotCode, setCotCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [displayData, setDisplayData] = useState({
     transferAmount: 0,
     currency: "$",
@@ -36,7 +39,7 @@ export function COTConfirmationDialog({
     if (transferData) {
       const MOCK_COT_PERCENTAGE = 0.01; // 1%
       const amount = transferData.amount || 0;
-      const currencySymbol = 'currency' in transferData && transferData.currency ? transferData.currency : "$"; // Handle optional currency
+      const currencySymbol = 'currency' in transferData && transferData.currency ? transferData.currency : "$";
       const cotAmount = amount * MOCK_COT_PERCENTAGE;
       const totalDeductionAmount = amount + cotAmount;
 
@@ -47,18 +50,38 @@ export function COTConfirmationDialog({
         totalDeduction: totalDeductionAmount.toFixed(2),
       });
     }
-  }, [transferData]);
+    if (!isOpen) {
+        setCotCode("");
+        setError(null);
+    }
+  }, [transferData, isOpen]);
 
 
   const handleConfirm = async () => {
+    if (!cotCode.trim()) {
+        setError("COT Approval Code is required to proceed.");
+        return;
+    }
+    setError(null);
     setIsConfirming(true);
+    // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 500)); 
     setIsConfirming(false);
-    onConfirm();
+    onConfirm(cotCode); // Pass the code
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      // If dialog is closed by user (e.g. Esc or X button), trigger cancel
+      if (!isConfirming) { // Avoid triggering cancel if it's closing due to confirmation
+        onCancel();
+      }
+    }
+    onOpenChange(open);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
@@ -66,7 +89,7 @@ export function COTConfirmationDialog({
             Cost of Transfer (COT) Confirmation
           </DialogTitle>
           <DialogDescription>
-            Please review and confirm the Cost of Transfer before proceeding.
+            Review the Cost of Transfer and enter your COT Approval Code. If you don't have a code, please contact support.
           </DialogDescription>
         </DialogHeader>
         {transferData && (
@@ -90,18 +113,27 @@ export function COTConfirmationDialog({
                 {displayData.currency}{displayData.totalDeduction}
               </span>
             </div>
+            <div className="space-y-2 pt-2">
+                <Label htmlFor="cotCode">COT Approval Code</Label>
+                <Input
+                id="cotCode"
+                value={cotCode}
+                onChange={(e) => setCotCode(e.target.value)}
+                placeholder="Enter COT code"
+                disabled={isConfirming}
+                />
+                {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
              <p className="text-xs text-muted-foreground pt-2">
-              Note: COT is estimated at 1% for this transaction. This amount will be deducted from your account upon successful completion of all authorization steps.
+              Note: COT is estimated at 1% for this transaction. This amount, along with the transfer principal, will be deducted from your account upon successful completion of all authorization steps.
             </p>
           </div>
         )}
         <DialogFooter className="gap-2 sm:justify-between">
-          <DialogClose asChild>
-            <Button variant="outline" onClick={onCancel} disabled={isConfirming}>
-              Cancel Transfer
-            </Button>
-          </DialogClose>
-          <Button onClick={handleConfirm} disabled={isConfirming}>
+          <Button variant="outline" onClick={onCancel} disabled={isConfirming}>
+            Cancel Transfer
+          </Button>
+          <Button onClick={handleConfirm} disabled={isConfirming || !cotCode.trim()}>
             {isConfirming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Confirm & Proceed
           </Button>
