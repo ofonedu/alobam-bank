@@ -10,7 +10,8 @@ import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Tim
 import { fileToDataURI } from "./file-utils";
 import { revalidatePath } from "next/cache";
 import { sendTransactionalEmail, getUserEmail } from "./email-service";
-import { validateAuthorizationCode, markCodeAsUsed, getPlatformSettingsAction } from "./actions/admin-code-actions"; // Added getPlatformSettingsAction
+import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions"; 
+import { getPlatformSettingsAction } from "./actions/admin-settings-actions"; // Corrected import path
 
 export interface KYCSubmissionResult {
   success: boolean;
@@ -143,8 +144,8 @@ interface RecordTransferResult {
 export async function recordTransferAction(
   userId: string,
   transferData: LocalTransferData | InternationalTransferData,
-  authorizations: Partial<AuthorizationDetails>, // Make fields optional for collected codes
-  platformCotPercentage?: number // Pass this in from the form
+  authorizations: Partial<AuthorizationDetails>, 
+  platformCotPercentage?: number 
 ): Promise<RecordTransferResult> {
   try {
     const settingsResult = await getPlatformSettingsAction();
@@ -194,11 +195,16 @@ export async function recordTransferAction(
       const updatedBalance = currentBalance - totalDeduction;
       transaction.update(userDocRef, { balance: updatedBalance });
 
-      const recipientDetails: TransactionType['recipientDetails'] = {
-        name: transferData.recipientName,
-        accountNumber: 'recipientAccountNumber' in transferData ? transferData.recipientAccountNumber : transferData.recipientAccountNumberIBAN,
-        bankName: transferData.bankName,
-      };
+      const recipientDetails: Partial<TransactionType['recipientDetails']> = {};
+      if (transferData.recipientName) recipientDetails.name = transferData.recipientName;
+      if ('recipientAccountNumber' in transferData && transferData.recipientAccountNumber) {
+        recipientDetails.accountNumber = transferData.recipientAccountNumber;
+      } else if ('recipientAccountNumberIBAN' in transferData && transferData.recipientAccountNumberIBAN) {
+        recipientDetails.accountNumber = transferData.recipientAccountNumberIBAN;
+      }
+      if (transferData.bankName) recipientDetails.bankName = transferData.bankName;
+
+
       if ('swiftBic' in transferData && transferData.swiftBic) {
         recipientDetails.swiftBic = transferData.swiftBic;
       }
@@ -207,7 +213,7 @@ export async function recordTransferAction(
       }
       
       const authDetailsToSave: AuthorizationDetails = {
-        cot: parseFloat(cotAmount.toFixed(2)),
+        cot: parseFloat(cotAmount.toFixed(2)), // COT amount is always recorded
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
       if (authorizations.imfCode) authDetailsToSave.imfCode = authorizations.imfCode;
@@ -223,8 +229,8 @@ export async function recordTransferAction(
         type: "transfer",
         status: "completed",
         currency: 'currency' in transferData ? transferData.currency : "USD", 
-        recipientDetails,
-        authorizationDetails: authDetailsToSave,
+        recipientDetails: Object.keys(recipientDetails).length > 0 ? recipientDetails as TransactionType['recipientDetails'] : undefined,
+        authorizationDetails: Object.keys(authDetailsToSave).length > 1 ? authDetailsToSave : undefined, // Only save if more than just COT amount is present
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
       
@@ -530,3 +536,5 @@ export async function submitSupportTicketAction(
     };
   }
 }
+
+

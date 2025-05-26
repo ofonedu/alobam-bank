@@ -78,12 +78,33 @@ export async function getAuthorizationCodesAction(): Promise<GetCodesResult> {
     const querySnapshot = await getDocs(q);
     
     const codes: SerializableAuthorizationCode[] = querySnapshot.docs.map(docSnap => {
-      const data = docSnap.data() as AuthorizationCodeType;
+      const data = docSnap.data(); 
+      let createdAtDate: Date;
+      if (data.createdAt && (data.createdAt as Timestamp)?.toDate) {
+        createdAtDate = (data.createdAt as Timestamp).toDate();
+      } else {
+        // Fallback for older data or if it's somehow already a Date (less likely from Firestore directly)
+        createdAtDate = new Date(data.createdAt); 
+      }
+
+      let expiresAtDate: Date | undefined = undefined;
+      if (data.expiresAt) {
+        if((data.expiresAt as Timestamp)?.toDate) {
+            expiresAtDate = (data.expiresAt as Timestamp).toDate();
+        } else {
+            expiresAtDate = new Date(data.expiresAt);
+        }
+      }
+
       return {
-        ...data,
         id: docSnap.id,
-        createdAt: data.createdAt.toDate().toISOString(),
-        expiresAt: data.expiresAt ? data.expiresAt.toDate().toISOString() : undefined,
+        value: data.value,
+        type: data.type,
+        userId: data.userId,
+        createdAt: createdAtDate.toISOString(),
+        expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
+        isUsed: data.isUsed,
+        generatedBy: data.generatedBy,
       };
     });
     
@@ -190,4 +211,4 @@ export async function markCodeAsUsed(
     }
 }
 
-export { getPlatformSettingsAction } from './admin-settings-actions'; // Re-export if needed elsewhere
+// Removed re-export: export { getPlatformSettingsAction } from './admin-settings-actions';
