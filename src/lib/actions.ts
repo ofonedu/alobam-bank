@@ -190,12 +190,12 @@ export async function recordTransferAction(
           swiftBic: 'swiftBic' in transferData ? transferData.swiftBic : undefined,
           country: 'country' in transferData ? transferData.country : undefined,
         },
-        authorizationDetails: {
+        authorizationDetails: { // Store the provided codes
           cot: parseFloat(cotAmount.toFixed(2)),
           cotCode: authorizations.cotCode,
-          imfCodeProvided: !!authorizations.imfCode, // True if imfCode is present
           imfCode: authorizations.imfCode,
           taxCode: authorizations.taxCode,
+          imfCodeProvided: !!authorizations.imfCode, // Keep this for backward compatibility if needed, or remove
         },
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
@@ -488,3 +488,5 @@ export async function submitSupportTicketAction(
     };
   }
 }
+
+    

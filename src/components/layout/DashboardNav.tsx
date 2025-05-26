@@ -18,11 +18,11 @@ import {
   LifeBuoy, 
   Shapes,
   LayoutTemplate,
-  // Mail // Removed Mail import
+  KeyRound, // Added KeyRound
 } from "lucide-react";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import type { DashboardNavProps, DashboardNavItem } from '@/types';
+import type { DashboardNavItem } from '@/types';
 
 
 const mainNavItems: DashboardNavItem[] = [
@@ -43,16 +43,15 @@ const adminNavItems: DashboardNavItem[] = [
  { href: "/admin/loans", label: "Manage Loans", icon: Landmark },
  { href: "/admin/financial-ops", label: "Financial Ops", icon: DollarSign },
  { href: "/admin/support", label: "Support Tickets", icon: LifeBuoy },
+ { href: "/admin/authorization-codes", label: "Auth Codes", icon: KeyRound }, // New Link
  { 
     href: "/admin/settings", 
     label: "System Settings", 
     icon: Settings, 
     subMenuPrefix: "/admin/settings",
-    // Sub-items for System Settings
     subItems: [
       { href: "/admin/settings/account-types", label: "Account Types", icon: Shapes },
       { href: "/admin/settings/landing-page", label: "Landing Page Content", icon: LayoutTemplate },
-      // Email Templates link removed
     ]
   },
 ];

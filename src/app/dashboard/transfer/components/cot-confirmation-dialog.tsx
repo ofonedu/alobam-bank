@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState, useEffect } from "react";
-import type { LocalTransferData, InternationalTransferData } from "@/lib/schemas";
 import type { COTConfirmationDialogProps } from "@/types";
 
 export function COTConfirmationDialog({
@@ -36,7 +35,7 @@ export function COTConfirmationDialog({
   });
 
   useEffect(() => {
-    if (transferData) {
+    if (transferData && isOpen) {
       const MOCK_COT_PERCENTAGE = 0.01; // 1%
       const amount = transferData.amount || 0;
       const currencySymbol = 'currency' in transferData && transferData.currency ? transferData.currency : "$";
@@ -49,10 +48,8 @@ export function COTConfirmationDialog({
         cot: cotAmount.toFixed(2),
         totalDeduction: totalDeductionAmount.toFixed(2),
       });
-    }
-    if (!isOpen) {
-        setCotCode("");
-        setError(null);
+      setCotCode(""); // Reset code input when dialog opens or data changes
+      setError(null);
     }
   }, [transferData, isOpen]);
 
@@ -66,22 +63,12 @@ export function COTConfirmationDialog({
     setIsConfirming(true);
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 500)); 
-    setIsConfirming(false);
-    onConfirm(cotCode); // Pass the code
-  };
-
-  const handleDialogClose = (open: boolean) => {
-    if (!open) {
-      // If dialog is closed by user (e.g. Esc or X button), trigger cancel
-      if (!isConfirming) { // Avoid triggering cancel if it's closing due to confirmation
-        onCancel();
-      }
-    }
-    onOpenChange(open);
+    onConfirm(cotCode); 
+    setIsConfirming(false); // Reset after onConfirm to allow parent to control dialog
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
@@ -142,3 +129,5 @@ export function COTConfirmationDialog({
     </Dialog>
   );
 }
+
+    

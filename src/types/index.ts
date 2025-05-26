@@ -16,7 +16,7 @@ export interface UserProfile {
   displayName?: string | null;
   photoURL?: string | null;
   phoneNumber?: string;
-  accountType?: string; // Will store ID of account type
+  accountType?: string; 
   currency?: string;
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
@@ -34,7 +34,7 @@ export interface Transaction {
   date: Date | Timestamp; 
   description: string;
   amount: number;
-  type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment"; // Changed manual_credit/debit to credit/debit
+  type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment";
   status: "pending" | "completed" | "failed";
   currency?: string;
   recipientDetails?: {
@@ -46,10 +46,10 @@ export interface Transaction {
   };
   authorizationDetails?: {
     cot?: number;
-    cotCode?: string; // Added
-    imfCodeProvided?: boolean; // Kept, could be derived from imfCode existence
-    imfCode?: string; // Added
-    taxCode?: string; // Added, replaces taxDocumentName
+    cotCode?: string; 
+    imfCodeProvided?: boolean; // Can be derived from imfCode presence
+    imfCode?: string; 
+    taxCode?: string; 
   };
   relatedTransferId?: string;
   isFlagged?: boolean;
@@ -72,7 +72,7 @@ export interface Loan {
 export interface KYCData {
   userId: string;
   fullName: string;
-  dateOfBirth: string; // Stored as YYYY-MM-DD string
+  dateOfBirth: string; 
   address: string;
   governmentId: string;
   photoUrl?: string;
@@ -131,14 +131,14 @@ export interface AccountType {
   id: string;
   name: string;
   description?: string;
-  createdAt: Date | Timestamp; // Firestore Timestamp when read, Date after processing
+  createdAt: Date | Timestamp; 
 }
 
 export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
   id: string; 
   userEmail?: string;
-  submittedAt: Date; // Ensure this is Date for client
-  reviewedAt?: Date;  // Ensure this is Date for client
+  submittedAt: Date; 
+  reviewedAt?: Date;  
 }
 
 
@@ -159,7 +159,7 @@ export interface PlatformSettings {
 
 // Landing Page Content Types
 export interface NavLinkItem {
-  id?: string; // For useFieldArray key
+  id?: string; 
   label: string;
   href: string;
 }
@@ -175,7 +175,7 @@ export interface HeroSectionContent {
 }
 
 export interface FeatureItem {
-  id?: string; // For useFieldArray key
+  id?: string; 
   icon: string;
   title: string;
   description: string;
@@ -188,7 +188,7 @@ export interface FeaturesOverviewContent {
 }
 
 export interface AccountOfferingItem {
-  id?: string; // For useFieldArray key
+  id?: string; 
   icon: string;
   name: string;
   description: string;
@@ -244,13 +244,13 @@ export interface FinalCTAContent {
 
 
 export interface FooterLinkColumn {
-  id?: string; // For useFieldArray key
+  id?: string; 
   title: string;
   links: NavLinkItem[];
 }
 
 export interface SocialMediaLink {
-  id?: string; // For useFieldArray key
+  id?: string; 
   platform: string;
   href: string;
   iconName?: string;
@@ -288,7 +288,7 @@ export interface DashboardNavItem {
     label: string;
     icon: React.ElementType;
     subMenuPrefix?: string;
-    subItems?: DashboardNavItem[]; // For nested menus
+    subItems?: DashboardNavItem[]; 
 }
 
 export interface DashboardNavProps {
@@ -324,7 +324,7 @@ export interface COTConfirmationDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   transferData: LocalTransferData | InternationalTransferData | null;
-  onConfirm: (cotCode: string) => void; // cotCode added
+  onConfirm: (cotCode: string) => void;
   onCancel: () => void;
 }
 
@@ -338,7 +338,7 @@ export interface IMFAuthorizationDialogProps {
 export interface TaxClearanceDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (taxCode: string) => void; // Changed from file to taxCode string
+  onConfirm: (taxCode: string) => void; 
   onCancel: () => void;
 }
 
@@ -393,3 +393,17 @@ export interface ProfileInfoItemProps {
   label: string;
   value: string | number | null | undefined;
 }
+
+// Admin Authorization Code Type
+export interface AuthorizationCode {
+  id: string;
+  value: string;
+  type: 'COT' | 'IMF' | 'TAX';
+  userId?: string; // Optional: If code is specific to a user
+  createdAt: Timestamp;
+  expiresAt?: Timestamp;
+  isUsed: boolean;
+  generatedBy: string; // Admin User ID or "system"
+}
+
+    

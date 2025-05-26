@@ -59,7 +59,7 @@ export function InternationalTransferForm() {
         console.error("Failed to load platform settings for transfer form:", result.error);
         toast({
             title: "Warning",
-            description: "Could not load transfer settings. Some authorization steps may be skipped.",
+            description: "Could not load transfer settings. Some authorization steps may be skipped or behave unexpectedly.",
             variant: "destructive"
         })
       }
@@ -93,32 +93,33 @@ export function InternationalTransferForm() {
     setIsSubmittingInitialForm(false);
   };
 
-  const proceedToNextStep = () => {
-    if (!currentTransferData || !platformSettings) {
+  const decideAndExecuteNextStep = (
+    dataForTransfer: InternationalTransferData,
+    authsSoFar: typeof collectedAuthCodes
+  ) => {
+    if (!platformSettings) {
+      toast({ title: "Error", description: "Platform settings not loaded. Cannot proceed.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
-
-    if (platformSettings.requireCOTConfirmation && !showCOTDialog && !collectedAuthCodes.cotCode) {
+    
+    if (platformSettings.requireCOTConfirmation && !authsSoFar.cotCode) {
+      setCurrentTransferData(dataForTransfer);
       setShowCOTDialog(true);
       return;
     }
-    if (platformSettings.requireIMFAuthorization && !showIMFDialog && !collectedAuthCodes.imfCode) {
-      setShowCOTDialog(false);
+    if (platformSettings.requireIMFAuthorization && !authsSoFar.imfCode) {
+      setCurrentTransferData(dataForTransfer);
       setShowIMFDialog(true);
       return;
     }
-    if (platformSettings.requireTaxClearance && !showTaxDialog && !collectedAuthCodes.taxCode) {
-      setShowCOTDialog(false);
-      setShowIMFDialog(false);
+    if (platformSettings.requireTaxClearance && !authsSoFar.taxCode) {
+      setCurrentTransferData(dataForTransfer);
       setShowTaxDialog(true);
       return;
     }
 
-    setShowCOTDialog(false);
-    setShowIMFDialog(false);
-    setShowTaxDialog(false);
-    finalizeTransfer();
+    finalizeTransfer(dataForTransfer, authsSoFar);
   };
 
   const onSubmitHandler = async (values: InternationalTransferData) => {
@@ -131,6 +132,7 @@ export function InternationalTransferForm() {
       return;
     }
     setIsSubmittingInitialForm(true);
+    setCurrentTransferData(values);
 
     const MOCK_COT_PERCENTAGE = 0.01; 
     const cotAmount = values.amount * MOCK_COT_PERCENTAGE;
@@ -139,50 +141,69 @@ export function InternationalTransferForm() {
     if (userProfile.balance < totalDeduction) {
       toast({
         title: "Insufficient Funds",
-        description: `You do not have enough balance to cover the transfer amount (${values.currency} ${values.amount.toFixed(2)}) and fees. Required: ${values.currency} ${totalDeduction.toFixed(2)}, Available: ${values.currency} ${userProfile.balance.toFixed(2)}. (Note: Currency conversion not yet implemented, assuming same currency for balance check)`,
+        description: `You do not have enough balance to cover the transfer amount (${values.currency} ${values.amount.toFixed(2)}) and estimated fees. Required: ${values.currency} ${totalDeduction.toFixed(2)}, Available: ${values.currency} ${userProfile.balance.toFixed(2)}. (Note: Currency conversion not yet implemented, assuming same currency for balance check)`,
         variant: "destructive",
       });
       setIsSubmittingInitialForm(false);
       return;
     }
 
-    setCurrentTransferData(values);
-    setTimeout(() => proceedToNextStep(), 0);
+    decideAndExecuteNextStep(values, {});
   };
 
   const handleCOTEConfirmed = (cotCode: string) => {
-    setCollectedAuthCodes(prev => ({ ...prev, cotCode }));
+    const updatedAuths = { ...collectedAuthCodes, cotCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowCOTDialog(false);
-    proceedToNextStep();
+    if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
   const handleIMFAuthorized = (imfCode: string) => {
-    setCollectedAuthCodes(prev => ({ ...prev, imfCode }));
+    const updatedAuths = { ...collectedAuthCodes, imfCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowIMFDialog(false);
-    proceedToNextStep();
+    if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
-  const handleTaxCodeEntered = async (taxCode: string) => { // Changed from handleTaxCleared
-    setCollectedAuthCodes(prev => ({ ...prev, taxCode }));
+  const handleTaxCodeEntered = async (taxCode: string) => {
+    const updatedAuths = { ...collectedAuthCodes, taxCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowTaxDialog(false);
-    proceedToNextStep();
+    if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
-  const finalizeTransfer = async () => {
-     if (!user || !currentTransferData) {
-      toast({ title: "Error", description: "Transfer details missing. Please start over.", variant: "destructive" });
+  const finalizeTransfer = async (
+    dataToFinalize: InternationalTransferData,
+    authCodesToFinalize: typeof collectedAuthCodes
+  ) => {
+     if (!user) {
+      toast({ title: "Error", description: "User session lost. Please log in and try again.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
     setIsSubmittingInitialForm(true);
 
-    const result = await recordTransferAction(user.uid, currentTransferData, collectedAuthCodes);
+    const result = await recordTransferAction(user.uid, dataToFinalize, authCodesToFinalize);
 
     if (result.success) {
       toast({
         title: "Transfer Successful",
-        description: `International transfer of ${currentTransferData.currency} ${currentTransferData.amount.toFixed(2)} to ${currentTransferData.recipientName} processed. New balance (approx.): $${result.newBalance?.toFixed(2)} (Note: Currency conversion not yet implemented)`,
-        variant: "default",
+        description: `International transfer of ${dataToFinalize.currency} ${dataToFinalize.amount.toFixed(2)} to ${dataToFinalize.recipientName} processed. New balance (approx.): $${result.newBalance?.toFixed(2)} (Note: Currency conversion not yet implemented)`,
       });
       await fetchUserProfile(user.uid); 
     } else {
@@ -198,8 +219,8 @@ export function InternationalTransferForm() {
   const handleAuthorizationCancel = () => {
     toast({
       title: "Transfer Cancelled",
-      description: "The fund transfer process was cancelled.",
-      variant: "destructive",
+      description: "The fund transfer process was cancelled by the user.",
+      variant: "default",
     });
     resetTransferFlow();
   };
@@ -214,6 +235,8 @@ export function InternationalTransferForm() {
         </div>
     );
   }
+  
+  const anyDialogOpen = showCOTDialog || showIMFDialog || showTaxDialog;
 
   return (
     <>
@@ -226,7 +249,7 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Full Name</FormLabel>
                 <FormControl>
-                  <Input placeholder="John Doe" {...field} />
+                  <Input placeholder="John Doe" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -239,7 +262,7 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Account Number / IBAN</FormLabel>
                 <FormControl>
-                  <Input placeholder="Enter IBAN or Account Number" {...field} />
+                  <Input placeholder="Enter IBAN or Account Number" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -252,7 +275,7 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Bank Name</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., Global Financial Services" {...field} />
+                  <Input placeholder="e.g., Global Financial Services" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -265,7 +288,7 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>SWIFT/BIC Code</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., CITIUS33XXX" {...field} />
+                  <Input placeholder="e.g., CITIUS33XXX" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -279,7 +302,7 @@ export function InternationalTransferForm() {
                 <FormLabel>Recipient's Country</FormLabel>
                 <FormControl>
                   {/* TODO: Replace with a Select component for better UX */}
-                  <Input placeholder="e.g., United States" {...field} />
+                  <Input placeholder="e.g., United States" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -292,7 +315,7 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Bank Address (Optional)</FormLabel>
                 <FormControl>
-                  <Textarea placeholder="Full address of the recipient's bank" {...field} />
+                  <Textarea placeholder="Full address of the recipient's bank" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -306,7 +329,7 @@ export function InternationalTransferForm() {
                   <FormItem>
                   <FormLabel>Amount to Transfer</FormLabel>
                   <FormControl>
-                      <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                      <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={isSubmittingInitialForm || anyDialogOpen} />
                   </FormControl>
                   <FormDescription>Available balance: {userProfile ? `$${userProfile.balance.toFixed(2)}` : 'Loading...'}</FormDescription>
                   <FormMessage />
@@ -320,7 +343,7 @@ export function InternationalTransferForm() {
                   <FormItem>
                   <FormLabel>Currency</FormLabel>
                   <FormControl>
-                      <Input placeholder="e.g., USD" {...field} />
+                      <Input placeholder="e.g., USD" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                   </FormControl>
                    <FormDescription>Specify transfer currency.</FormDescription>
                   <FormMessage />
@@ -335,19 +358,19 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Remarks (Optional)</FormLabel>
                 <FormControl>
-                  <Textarea placeholder="e.g., Invoice payment" {...field} />
+                  <Textarea placeholder="e.g., Invoice payment" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-          <Button type="submit" disabled={isSubmittingInitialForm || showCOTDialog || showIMFDialog || showTaxDialog || isLoadingSettings} className="w-full sm:w-auto">
-            {isSubmittingInitialForm && !(showCOTDialog || showIMFDialog || showTaxDialog) ? (
+          <Button type="submit" disabled={isSubmittingInitialForm || anyDialogOpen || isLoadingSettings} className="w-full sm:w-auto">
+            {isSubmittingInitialForm && !anyDialogOpen ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
                 <Globe className="mr-2 h-4 w-4" />
             )}
-            Initiate Transfer
+            {isSubmittingInitialForm && anyDialogOpen ? "Processing..." : "Initiate Transfer"}
           </Button>
         </form>
       </Form>
@@ -356,20 +379,29 @@ export function InternationalTransferForm() {
         <>
           <COTConfirmationDialog
             isOpen={showCOTDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowCOTDialog(open); }}
+            onOpenChange={(open) => {
+                setShowCOTDialog(open);
+                if (!open && !collectedAuthCodes.cotCode) handleAuthorizationCancel();
+            }}
             transferData={currentTransferData}
             onConfirm={handleCOTEConfirmed}
             onCancel={handleAuthorizationCancel}
           />
           <IMFAuthorizationDialog
             isOpen={showIMFDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowIMFDialog(open);}}
+            onOpenChange={(open) => {
+                setShowIMFDialog(open);
+                if (!open && !collectedAuthCodes.imfCode) handleAuthorizationCancel();
+            }}
             onConfirm={handleIMFAuthorized}
             onCancel={handleAuthorizationCancel}
           />
           <TaxClearanceDialog
             isOpen={showTaxDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowTaxDialog(open);}}
+            onOpenChange={(open) => {
+                setShowTaxDialog(open);
+                if (!open && !collectedAuthCodes.taxCode) handleAuthorizationCancel();
+            }}
             onConfirm={handleTaxCodeEntered}
             onCancel={handleAuthorizationCancel}
           />
@@ -378,3 +410,5 @@ export function InternationalTransferForm() {
     </>
   );
 }
+
+    

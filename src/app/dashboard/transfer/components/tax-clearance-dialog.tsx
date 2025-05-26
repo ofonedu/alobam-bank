@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, FileText } from "lucide-react"; // Changed icon from FileUp
+import { Loader2, FileText } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { TaxClearanceDialogProps } from "@/types";
 
@@ -23,45 +23,36 @@ export function TaxClearanceDialog({
   onConfirm,
   onCancel,
 }: TaxClearanceDialogProps) {
-  const [taxCode, setTaxCode] = useState(""); // Changed from file to taxCode
+  const [taxCode, setTaxCode] = useState(""); 
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
         setTaxCode("");
         setError(null);
     }
   }, [isOpen]);
 
   const handleConfirm = async () => {
-    if (!taxCode.trim()) { // Check if tax code is entered
+    if (!taxCode.trim()) { 
       setError("Please enter your Tax Clearance code.");
       return;
     }
     setError(null);
     setIsConfirming(true);
     // Simulate API call or validation
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
+    await new Promise(resolve => setTimeout(resolve, 500)); 
+    onConfirm(taxCode); 
     setIsConfirming(false);
-    onConfirm(taxCode); // Pass the tax code
-  };
-
-  const handleDialogClose = (open: boolean) => {
-    if (!open) {
-      if (!isConfirming) {
-        onCancel();
-      }
-    }
-    onOpenChange(open);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <FileText className="mr-2 h-5 w-5 text-primary" /> {/* Changed icon */}
+            <FileText className="mr-2 h-5 w-5 text-primary" /> 
             Tax Clearance Required
           </DialogTitle>
           <DialogDescription>
@@ -81,7 +72,7 @@ export function TaxClearanceDialog({
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
            <p className="text-xs text-muted-foreground">
-            This is a regulatory requirement for certain transactions. (This is a mock step).
+            This is a regulatory requirement for certain transactions.
           </p>
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
@@ -97,3 +88,5 @@ export function TaxClearanceDialog({
     </Dialog>
   );
 }
+
+    

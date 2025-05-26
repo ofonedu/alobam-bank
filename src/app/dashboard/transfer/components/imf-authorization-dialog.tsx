@@ -28,7 +28,7 @@ export function IMFAuthorizationDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
         setImfCode("");
         setError(null);
     }
@@ -42,22 +42,13 @@ export function IMFAuthorizationDialog({
     setError(null);
     setIsConfirming(true);
     // Simulate API call or validation
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsConfirming(false);
+    await new Promise(resolve => setTimeout(resolve, 500));
     onConfirm(imfCode);
+    setIsConfirming(false); 
   };
   
-  const handleDialogClose = (open: boolean) => {
-    if (!open) {
-      if (!isConfirming) { 
-        onCancel();
-      }
-    }
-    onOpenChange(open);
-  };
-
   return (
-    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
@@ -65,7 +56,7 @@ export function IMFAuthorizationDialog({
             IMF Authorization Required
           </DialogTitle>
           <DialogDescription>
-            Please enter your International Monetary Fund (IMF) authorization code. If you don't have a code, please contact support.
+            Please enter your International Monetary Fund (IMF) authorization code to proceed with the transfer. If you don't have a code, please contact support.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -81,7 +72,7 @@ export function IMFAuthorizationDialog({
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <p className="text-xs text-muted-foreground">
-            This is a security measure to authorize large or international transactions. (This is a mock step).
+            This is a security measure to authorize large or international transactions.
           </p>
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
@@ -97,3 +88,5 @@ export function IMFAuthorizationDialog({
     </Dialog>
   );
 }
+
+    

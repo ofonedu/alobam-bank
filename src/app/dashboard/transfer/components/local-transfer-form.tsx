@@ -59,7 +59,7 @@ export function LocalTransferForm() {
         console.error("Failed to load platform settings for transfer form:", result.error);
         toast({
             title: "Warning",
-            description: "Could not load transfer settings. Some authorization steps may be skipped.",
+            description: "Could not load transfer settings. Some authorization steps may be skipped or behave unexpectedly.",
             variant: "destructive"
         })
       }
@@ -91,39 +91,33 @@ export function LocalTransferForm() {
     setIsSubmittingInitialForm(false);
   };
 
-  const proceedToNextStep = () => {
-    if (!currentTransferData || !platformSettings) {
-      // This case should ideally not be hit if currentTransferData is set before calling this
+  const decideAndExecuteNextStep = (
+    dataForTransfer: LocalTransferData, 
+    authsSoFar: typeof collectedAuthCodes
+  ) => {
+    if (!platformSettings) {
+      toast({ title: "Error", description: "Platform settings not loaded. Cannot proceed.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
 
-    // Check COT
-    if (platformSettings.requireCOTConfirmation && !showCOTDialog && !collectedAuthCodes.cotCode) {
+    if (platformSettings.requireCOTConfirmation && !authsSoFar.cotCode) {
+      setCurrentTransferData(dataForTransfer); // Ensure data is set before showing dialog
       setShowCOTDialog(true);
       return;
     }
-    // Check IMF (after COT or if COT not required/done)
-    if (platformSettings.requireIMFAuthorization && !showIMFDialog && !collectedAuthCodes.imfCode) {
-      setShowCOTDialog(false); // Ensure previous dialog is closed
+    if (platformSettings.requireIMFAuthorization && !authsSoFar.imfCode) {
+      setCurrentTransferData(dataForTransfer);
       setShowIMFDialog(true);
       return;
     }
-    // Check Tax (after IMF or if IMF not required/done)
-    if (platformSettings.requireTaxClearance && !showTaxDialog && !collectedAuthCodes.taxCode) {
-      setShowCOTDialog(false);
-      setShowIMFDialog(false);
+    if (platformSettings.requireTaxClearance && !authsSoFar.taxCode) {
+      setCurrentTransferData(dataForTransfer);
       setShowTaxDialog(true);
       return;
     }
-
-    // All required steps are done (or not required), finalize
-    setShowCOTDialog(false);
-    setShowIMFDialog(false);
-    setShowTaxDialog(false);
-    finalizeTransfer();
+    finalizeTransfer(dataForTransfer, authsSoFar);
   };
-
 
   const onSubmitHandler = async (values: LocalTransferData) => {
     if (!user || userProfile === null) {
@@ -135,6 +129,7 @@ export function LocalTransferForm() {
       return;
     }
     setIsSubmittingInitialForm(true); 
+    setCurrentTransferData(values); // Set current transfer data immediately
 
     const MOCK_COT_PERCENTAGE = 0.01; 
     const cotAmount = values.amount * MOCK_COT_PERCENTAGE;
@@ -143,51 +138,71 @@ export function LocalTransferForm() {
     if (userProfile.balance < totalDeduction) {
       toast({
         title: "Insufficient Funds",
-        description: `You do not have enough balance to cover the transfer amount and fees. Required: $${totalDeduction.toFixed(2)}, Available: $${userProfile.balance.toFixed(2)}.`,
+        description: `You do not have enough balance to cover the transfer amount ($${values.amount.toFixed(2)}) and estimated fees. Required: $${totalDeduction.toFixed(2)}, Available: $${userProfile.balance.toFixed(2)}.`,
         variant: "destructive",
       });
       setIsSubmittingInitialForm(false);
       return;
     }
     
-    setCurrentTransferData(values); // Set data here, then proceed
-    // Delay slightly to ensure state update before proceedToNextStep reads it
-    setTimeout(() => proceedToNextStep(), 0);
+    decideAndExecuteNextStep(values, {}); // Start the authorization flow
   };
 
   const handleCOTEConfirmed = (cotCode: string) => {
-    setCollectedAuthCodes(prev => ({ ...prev, cotCode }));
+    const updatedAuths = { ...collectedAuthCodes, cotCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowCOTDialog(false);
-    proceedToNextStep();
+    if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
   const handleIMFAuthorized = (imfCode: string) => {
-    setCollectedAuthCodes(prev => ({ ...prev, imfCode }));
+    const updatedAuths = { ...collectedAuthCodes, imfCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowIMFDialog(false);
-    proceedToNextStep();
+     if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
   const handleTaxCodeEntered = async (taxCode: string) => {
-    setCollectedAuthCodes(prev => ({ ...prev, taxCode }));
+    const updatedAuths = { ...collectedAuthCodes, taxCode };
+    setCollectedAuthCodes(updatedAuths);
     setShowTaxDialog(false); 
-    proceedToNextStep(); // This will now lead to finalizeTransfer
+     if(currentTransferData) {
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
   
-  const finalizeTransfer = async () => {
-    if (!user || !currentTransferData) {
-      toast({ title: "Error", description: "Transfer details missing. Please start over.", variant: "destructive" });
+  const finalizeTransfer = async (
+    dataToFinalize: LocalTransferData, 
+    authCodesToFinalize: typeof collectedAuthCodes
+  ) => {
+    if (!user) {
+      toast({ title: "Error", description: "User session lost. Please log in and try again.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
-    setIsSubmittingInitialForm(true); // Keep true or set again if it was reset by dialogs closing
+    // setIsSubmittingInitialForm is already true from onSubmitHandler or should be set if coming from last dialog step.
+    // For clarity, ensure it's true before the async action.
+    setIsSubmittingInitialForm(true);
 
-    const result = await recordTransferAction(user.uid, currentTransferData, collectedAuthCodes);
+    const result = await recordTransferAction(user.uid, dataToFinalize, authCodesToFinalize);
 
     if (result.success) {
       toast({
         title: "Transfer Successful",
-        description: `Local transfer of $${currentTransferData.amount.toFixed(2)} to ${currentTransferData.recipientName} processed. New balance: $${result.newBalance?.toFixed(2)}`,
-        variant: "default",
+        description: `Local transfer of $${dataToFinalize.amount.toFixed(2)} to ${dataToFinalize.recipientName} processed. New balance: $${result.newBalance?.toFixed(2)}`,
       });
       await fetchUserProfile(user.uid); 
     } else {
@@ -203,8 +218,8 @@ export function LocalTransferForm() {
   const handleAuthorizationCancel = () => {
     toast({
       title: "Transfer Cancelled",
-      description: "The fund transfer process was cancelled.",
-      variant: "destructive",
+      description: "The fund transfer process was cancelled by the user.",
+      variant: "default", // Changed from destructive to default, as it's a user action
     });
     resetTransferFlow();
   };
@@ -221,6 +236,8 @@ export function LocalTransferForm() {
     );
   }
 
+  const anyDialogOpen = showCOTDialog || showIMFDialog || showTaxDialog;
+
   return (
     <>
       <Form {...form}>
@@ -232,7 +249,7 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Full Name</FormLabel>
                 <FormControl>
-                  <Input placeholder="John Doe" {...field} />
+                  <Input placeholder="John Doe" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -245,7 +262,7 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Account Number</FormLabel>
                 <FormControl>
-                  <Input placeholder="Enter account number" {...field} />
+                  <Input placeholder="Enter account number" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -258,7 +275,7 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Bank Name (Optional)</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., City Bank" {...field} />
+                  <Input placeholder="e.g., City Bank" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -271,7 +288,7 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Routing Number</FormLabel>
                 <FormControl>
-                  <Input placeholder="Enter 9-digit routing number" {...field} />
+                  <Input placeholder="Enter 9-digit routing number" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -284,7 +301,7 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Amount to Transfer ($)</FormLabel>
                 <FormControl>
-                  <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                  <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormDescription>
                   Available balance: {userProfile ? `$${userProfile.balance.toFixed(2)}` : 'Loading...'}
@@ -300,19 +317,19 @@ export function LocalTransferForm() {
               <FormItem>
                 <FormLabel>Remarks (Optional)</FormLabel>
                 <FormControl>
-                  <Textarea placeholder="e.g., Payment for services" {...field} />
+                  <Textarea placeholder="e.g., Payment for services" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-          <Button type="submit" disabled={isSubmittingInitialForm || showCOTDialog || showIMFDialog || showTaxDialog || isLoadingSettings} className="w-full sm:w-auto">
-            {isSubmittingInitialForm && !(showCOTDialog || showIMFDialog || showTaxDialog) ? (
+          <Button type="submit" disabled={isSubmittingInitialForm || anyDialogOpen || isLoadingSettings} className="w-full sm:w-auto">
+            {isSubmittingInitialForm && !anyDialogOpen ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            Initiate Transfer
+            {isSubmittingInitialForm && anyDialogOpen ? "Processing..." : "Initiate Transfer"}
           </Button>
         </form>
       </Form>
@@ -321,21 +338,30 @@ export function LocalTransferForm() {
         <>
           <COTConfirmationDialog
             isOpen={showCOTDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowCOTDialog(open); }}
+            onOpenChange={(open) => {
+              setShowCOTDialog(open);
+              if (!open && !collectedAuthCodes.cotCode) handleAuthorizationCancel();
+            }}
             transferData={currentTransferData}
             onConfirm={handleCOTEConfirmed}
             onCancel={handleAuthorizationCancel}
           />
           <IMFAuthorizationDialog
             isOpen={showIMFDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowIMFDialog(open);}}
+            onOpenChange={(open) => {
+                setShowIMFDialog(open);
+                if (!open && !collectedAuthCodes.imfCode) handleAuthorizationCancel();
+            }}
             onConfirm={handleIMFAuthorized}
             onCancel={handleAuthorizationCancel}
           />
           <TaxClearanceDialog
             isOpen={showTaxDialog}
-            onOpenChange={(open) => { if (!open) handleAuthorizationCancel(); else setShowTaxDialog(open);}}
-            onConfirm={handleTaxCodeEntered} // Changed from handleTaxCleared
+            onOpenChange={(open) => {
+                setShowTaxDialog(open);
+                if (!open && !collectedAuthCodes.taxCode) handleAuthorizationCancel();
+            }}
+            onConfirm={handleTaxCodeEntered}
             onCancel={handleAuthorizationCancel}
           />
         </>
@@ -343,3 +369,5 @@ export function LocalTransferForm() {
     </>
   );
 }
+
+    
