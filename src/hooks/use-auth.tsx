@@ -129,8 +129,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       const userDocRef = doc(db, "users", newUser.uid);
       const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-      const initialBalance = 0; // Default balance set to 0
+      const initialBalance = 0; 
       const constructedDisplayName = `${data.firstName} ${data.lastName}`;
+      
+      // Determine account type, providing a default if none selected (e.g., for initial admin setup)
+      const chosenAccountType = data.accountType || 
+                               (data.email === "admin@wohana.com" ? "admin_default_type" : "user_default_type");
 
       const newUserProfileData: UserProfile = {
         uid: newUser.uid,
@@ -140,10 +144,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         displayName: constructedDisplayName,
         photoURL: null, 
         phoneNumber: data.phoneNumber,
-        accountType: data.accountType,
+        accountType: chosenAccountType,
         currency: data.currency,
         kycStatus: "not_started",
-        role: data.email === "admin@wohana.com" ? "admin" : "user", // Assign admin role for specific email
+        role: data.email === "admin@wohana.com" ? "admin" : "user", 
         balance: initialBalance,
         accountNumber: newAccountNumber,
         isFlagged: false,
@@ -156,14 +160,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserProfile(newUserProfileData);
       setUser(newUser as AuthUser);
       
-      // Send welcome email
       if (newUser.email) {
         await sendTransactionalEmail({
             recipientEmail: newUser.email,
             emailType: "WELCOME_EMAIL",
             data: { 
                 firstName: data.firstName, 
-                appName: "Wohana Funds", // Or fetch dynamically if needed
+                appName: "Wohana Funds", 
                 loginLink: `${window.location.origin}/login`
             }
         });
@@ -212,7 +215,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Error signing out:", error);
       toast({ title: "Sign Out Failed", description: "Could not sign out. Please try again.", variant: "destructive" });
-      throw error; // Re-throw so UI can handle if needed
+      throw error; 
     } finally {
       setLoading(false);
     }
