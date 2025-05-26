@@ -40,8 +40,24 @@ const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/web
 
 export const KYCFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
-  dateOfBirth: z.string().refine((dob) => /^\\d{4}-\\d{2}-\\d{2}$/.test(dob), {
-    message: "Date of birth must be in YYYY-MM-DD format.",
+  dateOfBirth: z.coerce.date({
+    required_error: "Date of birth is required.",
+    invalid_type_error: "Invalid date. Please use the calendar or enter in a recognizable format (e.g., YYYY-MM-DD, MM/DD/YYYY).",
+  }).transform(date => {
+    // Check if the date is valid after coercion
+    if (isNaN(date.getTime())) {
+        // This should ideally be caught by `coerce.date` itself with `invalid_type_error`
+        // but as a defensive measure, we can re-check.
+        // However, Zod's `transform` runs *after* successful parsing by `coerce.date`.
+        // So, if `date` is invalid here, it's an unexpected state.
+        // For robust error handling, this scenario means `coerce.date` might have issues.
+        // A direct throw here might not be the best Zod way; errors are best handled by Zod's internal mechanisms.
+        // Let's rely on coerce.date's error reporting. The transform assumes a valid Date object.
+    }
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }),
   address: z.string().min(5, { message: "Address must be at least 5 characters." }),
   governmentId: z.string().min(5, { message: "Government ID must be at least 5 characters." }),
