@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Filter, Flag, Eye, ShieldCheck, Loader2, AlertTriangle, Globe } from "lucide-react";
+import { Search, Filter, Flag, Eye, ShieldCheck, Loader2, AlertTriangle, Globe, CheckSquare } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { AdminTransactionView } from "@/types";
@@ -13,6 +13,9 @@ import { db } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ViewTransactionDetailModal } from "./components/ViewTransactionDetailModal";
 import { cn } from "@/lib/utils";
+import { markTransactionAsCompletedAction } from "@/lib/actions/admin-actions";
+import { useToast } from "@/hooks/use-toast";
+
 
 const TransactionStatusBadge = ({ status }: { status: AdminTransactionView["status"] }) => {
   switch (status) {
@@ -86,6 +89,7 @@ const getRandomName = () => {
 
 
 export default function AdminTransactionsPage() {
+  const { toast } = useToast();
   const [transactions, setTransactions] = useState<AdminTransactionView[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterFlagged, setFilterFlagged] = useState(false);
@@ -94,66 +98,81 @@ export default function AdminTransactionsPage() {
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTransactionForDetail, setSelectedTransactionForDetail] = useState<AdminTransactionView | null>(null);
+  const [completingTransactionId, setCompletingTransactionId] = useState<string | null>(null);
 
   const displayedUserNames = useMemo(() => new Map<string, string>(), []);
 
 
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      setIsLoading(true);
-      setError(null);
-      displayedUserNames.clear(); // Clear map on new fetch
-      try {
-        const transactionsCollectionRef = collection(db, "transactions");
-        const q = query(transactionsCollectionRef, orderBy("date", "desc"));
-        const querySnapshot = await getDocs(q);
-        const fetchedTransactions: AdminTransactionView[] = querySnapshot.docs.map((doc) => {
-          const data = doc.data();
-          let transactionDate: Date;
-            if (data.date && (data.date as Timestamp).toDate) {
-                transactionDate = (data.date as Timestamp).toDate();
-            } else if (data.date instanceof Date) {
-                transactionDate = data.date;
-            } else {
-                transactionDate = new Date(data.date); // Fallback attempt
-            }
-          
-          let userNameToDisplay = data.userName;
-          if (!userNameToDisplay) {
-            if (!displayedUserNames.has(data.userId)) {
-                displayedUserNames.set(data.userId, getRandomName());
-            }
-            userNameToDisplay = displayedUserNames.get(data.userId);
+  const fetchTransactions = async () => {
+    setIsLoading(true);
+    setError(null);
+    // displayedUserNames.clear(); // Don't clear if we want names to be semi-persistent per session
+    try {
+      const transactionsCollectionRef = collection(db, "transactions");
+      const q = query(transactionsCollectionRef, orderBy("date", "desc"));
+      const querySnapshot = await getDocs(q);
+      const fetchedTransactions: AdminTransactionView[] = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        let transactionDate: Date;
+          if (data.date && (data.date as Timestamp).toDate) {
+              transactionDate = (data.date as Timestamp).toDate();
+          } else if (data.date instanceof Date) {
+              transactionDate = data.date;
+          } else {
+              transactionDate = new Date(data.date); // Fallback attempt
           }
+        
+        let userNameToDisplay = data.userName;
+        if (!userNameToDisplay) {
+          if (!displayedUserNames.has(data.userId)) {
+              displayedUserNames.set(data.userId, getRandomName());
+          }
+          userNameToDisplay = displayedUserNames.get(data.userId);
+        }
 
-          return {
-            id: doc.id,
-            ...data,
-            date: transactionDate,
-            userName: userNameToDisplay, // Use the potentially generated name
-          } as AdminTransactionView;
-        });
-        setTransactions(fetchedTransactions);
-      } catch (err: any) {
-        console.error("Error fetching transactions:", err);
-        setError("Failed to fetch transactions. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+        return {
+          id: doc.id,
+          ...data,
+          date: transactionDate,
+          userName: userNameToDisplay, 
+        } as AdminTransactionView;
+      });
+      setTransactions(fetchedTransactions);
+    } catch (err: any) {
+      console.error("Error fetching transactions:", err);
+      setError("Failed to fetch transactions. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchTransactions();
-  }, [displayedUserNames]); // Add displayedUserNames to dependencies if you want it to re-trigger (though clearing it inside is usually enough for refetch)
+  }, [displayedUserNames]);
 
   const handleViewDetails = (transaction: AdminTransactionView) => {
     setSelectedTransactionForDetail(transaction);
     setIsDetailModalOpen(true);
   };
 
+  const handleMarkAsCompleted = async (transaction: AdminTransactionView) => {
+    if (transaction.status !== 'pending') return;
+    setCompletingTransactionId(transaction.id);
+    const result = await markTransactionAsCompletedAction(transaction.id, transaction.userId, transaction.amount);
+    if (result.success) {
+      toast({ title: "Success", description: result.message });
+      await fetchTransactions(); // Refresh list
+    } else {
+      toast({ title: "Error", description: result.message || "Failed to mark as completed.", variant: "destructive" });
+    }
+    setCompletingTransactionId(null);
+  };
+
   const filteredTransactions = transactions.filter(txn => {
     const matchesSearch = (
       txn.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       txn.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) || // Use txn.userName which might be the generated one
+      (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       txn.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
     const matchesFlag = filterFlagged ? txn.isFlagged : true;
@@ -226,7 +245,7 @@ export default function AdminTransactionsPage() {
                     <TableRow key={txn.id} className={txn.isFlagged ? "bg-destructive/10 hover:bg-destructive/20" : ""}>
                       <TableCell className="font-mono text-xs">{txn.id}</TableCell>
                       <TableCell>
-                        <div>{txn.userName}</div> {/* userName is now pre-filled with random if original was missing */}
+                        <div>{txn.userName}</div>
                         <div className="text-xs text-muted-foreground">{txn.userId}</div>
                       </TableCell>
                       <TableCell>{formatDateDisplay(txn.date)}</TableCell>
@@ -241,6 +260,18 @@ export default function AdminTransactionsPage() {
                           <Button variant="ghost" size="icon" title="View Details" onClick={() => handleViewDetails(txn)}>
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {txn.status === 'pending' && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              title="Mark as Completed" 
+                              onClick={() => handleMarkAsCompleted(txn)}
+                              disabled={completingTransactionId === txn.id}
+                              className="text-green-600 hover:text-green-700"
+                            >
+                              {completingTransactionId === txn.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckSquare className="h-4 w-4" />}
+                            </Button>
+                          )}
                           {txn.isFlagged && <Button variant="ghost" size="icon" title="Mark as Reviewed" disabled><ShieldCheck className="h-4 w-4" /></Button>}
                       </TableCell>
                     </TableRow>
@@ -262,4 +293,3 @@ export default function AdminTransactionsPage() {
     </div>
   );
 }
-

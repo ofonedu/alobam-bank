@@ -315,8 +315,6 @@ export async function generateRandomTransactionsAction(
     const batch = writeBatch(db);
     const transactionsColRef = collection(db, "transactions");
 
-    const statuses: TransactionType['status'][] = ["completed", "completed", "completed", "pending", "failed"]; // Skew towards completed
-
     let totalAmountForCompleted = 0;
     const generatedTransactions: Array<Omit<TransactionType, "id" | "date"> & { date: Timestamp }> = [];
 
@@ -329,26 +327,28 @@ export async function generateRandomTransactionsAction(
 
       if (targetNetValue !== undefined) {
         const remainingTransactions = count - i;
-        const idealAmountPerTx = (targetNetValue - totalAmountForCompleted) / remainingTransactions;
-        // Introduce some randomness but aim for the target
+        // Calculate the average amount needed per remaining transaction to reach the targetNetValue
+        // This needs to consider only future *completed* transactions.
+        // For simplicity in generation, we'll still aim for the overall target and let status sort it out.
+        const idealAmountPerTx = remainingTransactions > 0 ? (targetNetValue - totalAmountForCompleted) / remainingTransactions : 0;
+        
         const randomFactor = (Math.random() - 0.5) * 0.6 + 1; // e.g., 0.7 to 1.3
         amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
-        // Ensure last transaction tries to hit the target more closely if possible
-        if (i === count - 1) {
+        
+        if (i === count - 1 && remainingTransactions === 1) { // Last transaction
             amount = parseFloat((targetNetValue - totalAmountForCompleted).toFixed(2));
         }
-         // Clamp amount to avoid extreme values, e.g., no more than targetNetValue abs
-        if (targetNetValue !== 0) {
-            amount = Math.max(-Math.abs(targetNetValue*2/count), Math.min(Math.abs(targetNetValue*2/count), amount));
-        } else { // if target is 0, keep amounts relatively small
-            amount = Math.max(-200, Math.min(200, amount));
-        }
+        
+        // Clamp amount to avoid extreme values relative to targetNetValue, or use a fixed cap if target is 0
+        const maxIndividualTxAmount = targetNetValue !== 0 ? Math.abs(targetNetValue) / Math.max(1, count / 5) : 500; // Heuristic
+        amount = Math.max(-maxIndividualTxAmount, Math.min(maxIndividualTxAmount, amount));
+        amount = parseFloat(amount.toFixed(2));
 
 
       } else {
         amount = (Math.random() * 495 + 5) * (Math.random() < 0.55 ? 1 : -1); // Roughly 55% chance of credit
+        amount = parseFloat(amount.toFixed(2));
       }
-      amount = parseFloat(amount.toFixed(2));
 
 
       if (amount > 0) {
@@ -373,7 +373,16 @@ export async function generateRandomTransactionsAction(
       }
       
       const description = `${getRandomElement(transactionActions)} ${counterpartName}`;
-      const status = getRandomElement(statuses);
+      
+      let status: TransactionType['status'];
+      const statusRoll = Math.random() * 100;
+      if (statusRoll < 95) { // 95% completed
+        status = "completed";
+      } else if (statusRoll < 98) { // 3% pending (95 to 98)
+        status = "pending";
+      } else { // 2% failed (98 to 100)
+        status = "failed";
+      }
 
       const transactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
@@ -387,7 +396,7 @@ export async function generateRandomTransactionsAction(
       };
       generatedTransactions.push(transactionData);
 
-      if (status === 'completed') {
+      if (status === 'completed') { // Only add to balance if completed
         totalAmountForCompleted += amount;
       }
     }
@@ -398,6 +407,7 @@ export async function generateRandomTransactionsAction(
         batch.set(newTransactionRef, txData);
     });
 
+    // The balance update should reflect the sum of *completed* transactions
     const newBalance = parseFloat((currentBalance + totalAmountForCompleted).toFixed(2));
     batch.update(userDocRef, { balance: newBalance });
 
@@ -411,7 +421,7 @@ export async function generateRandomTransactionsAction(
 
     return { 
       success: true, 
-      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} to ${userCurrency} ${newBalance.toFixed(2)}.`, 
+      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} (from completed transactions) to ${userCurrency} ${newBalance.toFixed(2)}.`, 
       count 
     };
   } catch (error: any) {
@@ -542,6 +552,70 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
   } catch (error: any) {
     console.error("Error rejecting KYC:", error);
     return { success: false, message: "Failed to reject KYC.", error: error.message };
+  }
+}
+
+interface TransactionActionResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export async function markTransactionAsCompletedAction(
+  transactionId: string,
+  userId: string,
+  amount: number // The amount of the transaction being marked as completed
+): Promise<TransactionActionResult> {
+  if (!transactionId || !userId) {
+    return { success: false, message: "Transaction ID and User ID are required." };
+  }
+
+  try {
+    await runTransaction(db, async (firestoreTransaction) => {
+      const transactionDocRef = doc(db, "transactions", transactionId);
+      const userDocRef = doc(db, "users", userId);
+
+      const transactionDoc = await firestoreTransaction.get(transactionDocRef);
+      const userDoc = await firestoreTransaction.get(userDocRef);
+
+      if (!transactionDoc.exists()) {
+        throw new Error("Transaction not found.");
+      }
+      if (!userDoc.exists()) {
+        throw new Error("User profile not found.");
+      }
+
+      const transactionData = transactionDoc.data() as TransactionType;
+      if (transactionData.status !== "pending") {
+        throw new Error("Only pending transactions can be marked as completed.");
+      }
+      // Ensure the amount passed matches the transaction amount for safety
+      if (transactionData.amount !== amount) {
+          console.warn(`Amount mismatch for transaction ${transactionId}. Passed: ${amount}, Stored: ${transactionData.amount}. Using stored amount for balance update.`);
+      }
+
+
+      const userProfileData = userDoc.data() as UserProfile;
+      const currentBalance = userProfileData.balance;
+      const newBalance = currentBalance + transactionData.amount; // Use the stored amount
+
+      firestoreTransaction.update(transactionDocRef, { status: "completed", updatedAt: Timestamp.now() });
+      firestoreTransaction.update(userDocRef, { balance: newBalance });
+    });
+
+    revalidatePath("/admin/transactions");
+    revalidatePath("/admin/users"); // User balance might be displayed here
+    revalidatePath(`/dashboard/transactions`); 
+    revalidatePath(`/dashboard`); // User balance is displayed here
+
+    return { success: true, message: `Transaction ${transactionId} marked as completed and balance updated.` };
+  } catch (error: any) {
+    console.error("Error marking transaction as completed:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to mark transaction as completed.",
+      error: error.message,
+    };
   }
 }
 
