@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RegisterSchema, type RegisterFormData } from "@/lib/schemas";
 import { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAccountTypesAction } from "@/lib/actions/admin-settings-actions";
 import type { AccountType } from "@/types";
@@ -79,11 +79,14 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
     }
   };
 
+  const noAccountTypesAvailable = !isLoadingAccountTypes && accountTypesList.length === 0 && !accountTypesError;
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         {error && (
           <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Registration Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -168,7 +171,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {!isLoadingAccountTypes && accountTypesList.length === 0 && !accountTypesError && (
+                  {noAccountTypesAvailable && (
                      <SelectItem value="no-types" disabled>No account types available</SelectItem>
                   )}
                   {accountTypesError && (
@@ -185,6 +188,15 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             </FormItem>
           )}
         />
+        {noAccountTypesAvailable && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Account Types Missing</AlertTitle>
+            <AlertDescription>
+              No account types are currently configured. An administrator needs to add account types in the admin settings before registration can be completed.
+            </AlertDescription>
+          </Alert>
+        )}
         <FormField
           control={form.control}
           name="currency"
@@ -208,7 +220,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full" disabled={isLoading || isLoadingAccountTypes}>
+        <Button type="submit" className="w-full" disabled={isLoading || isLoadingAccountTypes || noAccountTypesAvailable}>
           {(isLoading || isLoadingAccountTypes) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Create Account
         </Button>
