@@ -29,6 +29,7 @@ export default function AdminFinancialOpsPage() {
   // State for Generate History
   const [selectedUserIdHistory, setSelectedUserIdHistory] = useState<string>('');
   const [numTransactions, setNumTransactions] = useState<string>('5');
+  const [targetNetValue, setTargetNetValue] = useState<string>(''); // New state for target net value
   const [isGeneratingHistory, setIsGeneratingHistory] = useState(false);
 
   useEffect(() => {
@@ -80,11 +81,13 @@ export default function AdminFinancialOpsPage() {
       return;
     }
     setIsGeneratingHistory(true);
-    const result = await generateRandomTransactionsAction(selectedUserIdHistory, parseInt(numTransactions));
+    const targetNetValNum = targetNetValue ? parseFloat(targetNetValue) : undefined;
+    const result = await generateRandomTransactionsAction(selectedUserIdHistory, parseInt(numTransactions), targetNetValNum);
     if (result.success) {
       toast({ title: "Success", description: result.message });
       setSelectedUserIdHistory('');
       setNumTransactions('5');
+      setTargetNetValue('');
     } else {
       toast({ title: "Failed", description: result.message || "Could not generate history.", variant: "destructive" });
     }
@@ -170,7 +173,7 @@ export default function AdminFinancialOpsPage() {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center"><History className="mr-2 h-5 w-5" />Generate Random Transaction History</CardTitle>
-            <CardDescription>For testing purposes, generate random transaction history for a user. This action now also updates the user's account balance accordingly.</CardDescription>
+            <CardDescription>For testing, generate random transactions for a user. This updates the user's balance.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -186,18 +189,31 @@ export default function AdminFinancialOpsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label htmlFor="numTransactions">Number of Transactions</Label>
-              <Input 
-                id="numTransactions" 
-                type="number" 
-                placeholder="e.g., 5" 
-                value={numTransactions}
-                onChange={(e) => setNumTransactions(e.target.value)}
-                min="1"
-                max="50"
-                disabled={isGeneratingHistory}
-              />
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                <Label htmlFor="numTransactions">Number of Transactions</Label>
+                <Input 
+                    id="numTransactions" 
+                    type="number" 
+                    placeholder="e.g., 5" 
+                    value={numTransactions}
+                    onChange={(e) => setNumTransactions(e.target.value)}
+                    min="1"
+                    max="50"
+                    disabled={isGeneratingHistory}
+                />
+                </div>
+                <div>
+                    <Label htmlFor="targetNetValue">Target Net Value (Optional)</Label>
+                    <Input 
+                        id="targetNetValue" 
+                        type="number" 
+                        placeholder="e.g., 500 or -200" 
+                        value={targetNetValue}
+                        onChange={(e) => setTargetNetValue(e.target.value)}
+                        disabled={isGeneratingHistory}
+                    />
+                </div>
             </div>
             <Button onClick={handleGenerateHistory} disabled={!selectedUserIdHistory || !numTransactions || parseInt(numTransactions) <=0 || isGeneratingHistory}>
               {isGeneratingHistory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}

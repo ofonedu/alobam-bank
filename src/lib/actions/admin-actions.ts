@@ -79,7 +79,7 @@ export async function updateLoanStatusAction(
     const updateData: Partial<Pick<Loan, 'status' | 'approvalDate'>> = { status: newStatus };
 
     if (newStatus === "approved") {
-      updateData.approvalDate = new Date(); // Store as JS Date, Firestore will convert to Timestamp
+      updateData.approvalDate = new Date(); 
     }
 
     await updateDoc(loanDocRef, updateData);
@@ -176,7 +176,7 @@ export async function issueManualAdjustmentAction(
 
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
-    const transactionType = type === "credit" ? "credit" : "debit"; // Changed from manual_credit/manual_debit
+    const transactionType = type === "credit" ? "credit" : "debit"; 
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
@@ -205,12 +205,12 @@ export async function issueManualAdjustmentAction(
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
         date: Timestamp.now(),
-        description: description, // Use admin-provided description directly
+        description: description, 
         amount: adjustmentAmount,
         type: transactionType,
         status: "completed",
         currency: userCurrency, 
-        notes: `Manual adjustment by admin: ${adminUserId || 'System'}. User: ${userName || targetUserId}. Original input description: ${description}`
+        notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. User: ${userName || targetUserId}. Original input reason: ${description}`
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData); 
       return { transactionId: transactionDocRef.id, newBalance }; 
@@ -221,6 +221,7 @@ export async function issueManualAdjustmentAction(
         recipientEmail: userEmail,
         emailType: "MANUAL_DEBIT_NOTIFICATION",
         data: {
+          userName: userName || 'Valued Customer',
           amount: amount.toFixed(2),
           currency: userCurrency,
           description,
@@ -234,6 +235,7 @@ export async function issueManualAdjustmentAction(
         recipientEmail: userEmail,
         emailType: "MANUAL_CREDIT_NOTIFICATION",
         data: {
+          userName: userName || 'Valued Customer',
           amount: amount.toFixed(2),
           currency: userCurrency,
           description,
@@ -265,6 +267,20 @@ export async function issueManualAdjustmentAction(
   }
 }
 
+// Helper function for random selection from an array
+const getRandomElement = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// Sample names and company details
+const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica"];
+const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson"];
+const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien"];
+const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh"];
+const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna"];
+const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov"];
+const companySuffixes = ["Solutions", "Group", "Enterprises", "Corp", "Ltd.", "Inc.", "Global", "Tech"];
+const companyRegions = ["Global", "Atlantic", "Pacific", "Euro", "Asia", "Ameri"];
+const transactionActions = ["Payment to", "Received from", "Invoice for", "Services by", "Consulting for", "Purchase from", "Refund from", "Subscription to"];
+
 
 interface GenerateRandomTransactionsResult {
   success: boolean;
@@ -275,7 +291,8 @@ interface GenerateRandomTransactionsResult {
 
 export async function generateRandomTransactionsAction(
   targetUserId: string,
-  count: number
+  count: number,
+  targetNetValue?: number
 ): Promise<GenerateRandomTransactionsResult> {
   if (!targetUserId || count <= 0) {
     return { success: false, message: "User ID and a positive count are required." };
@@ -298,44 +315,90 @@ export async function generateRandomTransactionsAction(
     const batch = writeBatch(db);
     const transactionsColRef = collection(db, "transactions");
 
-    const descriptions = ["Online Purchase", "Service Fee", "Subscription", "Refund Recieved", "Cash Deposit", "Utility Bill", "Salary Payment", "Loan Interest", "Investment Dividend", "Miscellaneous Credit", "Miscellaneous Debit"];
-    const types: TransactionType['type'][] = ["withdrawal", "fee", "deposit", "credit", "debit", "transfer"]; // Updated types
-    const statuses: TransactionType['status'][] = ["completed", "pending", "failed"];
+    const statuses: TransactionType['status'][] = ["completed", "completed", "completed", "pending", "failed"]; // Skew towards completed
 
-    let totalAmountGenerated = 0;
+    let totalAmountForCompleted = 0;
+    const generatedTransactions: Array<Omit<TransactionType, "id" | "date"> & { date: Timestamp }> = [];
 
     for (let i = 0; i < count; i++) {
-      const randomType = types[Math.floor(Math.random() * types.length)];
-      let randomAmount = Math.random() * 500 + 5; 
-      
-      if (["withdrawal", "fee", "debit"].includes(randomType) || (randomType === "transfer" && Math.random() < 0.5)) { // Updated types
-        randomAmount = -Math.abs(randomAmount);
-      } else {
-        randomAmount = Math.abs(randomAmount);
-      }
-      
       const randomDate = new Date();
       randomDate.setDate(randomDate.getDate() - Math.floor(Math.random() * 90)); 
+
+      let amount;
+      let type: TransactionType['type'];
+
+      if (targetNetValue !== undefined) {
+        const remainingTransactions = count - i;
+        const idealAmountPerTx = (targetNetValue - totalAmountForCompleted) / remainingTransactions;
+        // Introduce some randomness but aim for the target
+        const randomFactor = (Math.random() - 0.5) * 0.6 + 1; // e.g., 0.7 to 1.3
+        amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
+        // Ensure last transaction tries to hit the target more closely if possible
+        if (i === count - 1) {
+            amount = parseFloat((targetNetValue - totalAmountForCompleted).toFixed(2));
+        }
+         // Clamp amount to avoid extreme values, e.g., no more than targetNetValue abs
+        if (targetNetValue !== 0) {
+            amount = Math.max(-Math.abs(targetNetValue*2/count), Math.min(Math.abs(targetNetValue*2/count), amount));
+        } else { // if target is 0, keep amounts relatively small
+            amount = Math.max(-200, Math.min(200, amount));
+        }
+
+
+      } else {
+        amount = (Math.random() * 495 + 5) * (Math.random() < 0.55 ? 1 : -1); // Roughly 55% chance of credit
+      }
+      amount = parseFloat(amount.toFixed(2));
+
+
+      if (amount > 0) {
+        type = getRandomElement(["deposit", "credit"]);
+      } else {
+        type = getRandomElement(["withdrawal", "fee", "debit", "transfer"]);
+      }
+
+      // Generate counterpart name/company
+      let counterpartName = "";
+      const isCompany = Math.random() < 0.4; // 40% chance of company
+      const regionChoice = getRandomElement(["American", "Asian", "European"]);
+
+      if (isCompany) {
+        counterpartName = `${getRandomElement(companyRegions)} ${getRandomElement(companySuffixes)}`;
+      } else {
+        let fName, lName;
+        if (regionChoice === "American") { fName = getRandomElement(americanFirstNames); lName = getRandomElement(americanLastNames); }
+        else if (regionChoice === "Asian") { fName = getRandomElement(asianFirstNames); lName = getRandomElement(asianLastNames); }
+        else { fName = getRandomElement(europeanFirstNames); lName = getRandomElement(europeanLastNames); }
+        counterpartName = `${fName} ${lName}`;
+      }
+      
+      const description = `${getRandomElement(transactionActions)} ${counterpartName}`;
+      const status = getRandomElement(statuses);
 
       const transactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
         date: Timestamp.fromDate(randomDate),
-        description: descriptions[Math.floor(Math.random() * descriptions.length)],
-        amount: parseFloat(randomAmount.toFixed(2)),
-        type: randomType,
-        status: statuses[Math.floor(Math.random() * statuses.length)],
+        description: description,
+        amount: amount,
+        type: type,
+        status: status,
         currency: userCurrency,
         isFlagged: Math.random() < 0.05, 
       };
-      const newTransactionRef = doc(transactionsColRef); 
-      batch.set(newTransactionRef, transactionData);
+      generatedTransactions.push(transactionData);
 
-      if (transactionData.status === 'completed') {
-        totalAmountGenerated += transactionData.amount;
+      if (status === 'completed') {
+        totalAmountForCompleted += amount;
       }
     }
+    
+    // Add transactions to batch
+    generatedTransactions.forEach(txData => {
+        const newTransactionRef = doc(transactionsColRef); 
+        batch.set(newTransactionRef, txData);
+    });
 
-    const newBalance = parseFloat((currentBalance + totalAmountGenerated).toFixed(2));
+    const newBalance = parseFloat((currentBalance + totalAmountForCompleted).toFixed(2));
     batch.update(userDocRef, { balance: newBalance });
 
     await batch.commit();
@@ -348,7 +411,7 @@ export async function generateRandomTransactionsAction(
 
     return { 
       success: true, 
-      message: `${count} random transactions generated for user ${targetUserId}. Balance updated by ${userCurrency} ${totalAmountGenerated.toFixed(2)} to ${userCurrency} ${newBalance.toFixed(2)}.`, 
+      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} to ${userCurrency} ${newBalance.toFixed(2)}.`, 
       count 
     };
   } catch (error: any) {
@@ -408,7 +471,7 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
 
     const kycUpdate: Partial<KYCData> = {
       status: "verified",
-      reviewedAt: new Date(), // Store as JS Date
+      reviewedAt: new Date(), 
       reviewedBy: adminId || "system", 
       rejectionReason: "" 
     };
@@ -451,7 +514,7 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     const kycUpdate: Partial<KYCData> = {
       status: "rejected",
       rejectionReason,
-      reviewedAt: new Date(), // Store as JS Date
+      reviewedAt: new Date(), 
       reviewedBy: adminId || "system", 
     };
     const userProfileUpdate: Partial<UserProfile> = { kycStatus: "rejected" };
@@ -481,3 +544,4 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     return { success: false, message: "Failed to reject KYC.", error: error.message };
   }
 }
+

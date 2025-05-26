@@ -7,7 +7,7 @@ import { Search, Filter, Flag, Eye, ShieldCheck, Loader2, AlertTriangle, Globe }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { AdminTransactionView } from "@/types";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, Timestamp, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -59,6 +59,31 @@ const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
     return date.toLocaleString();
   };
 
+const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica", "James", "Linda", "Robert", "Patricia"];
+const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson", "Garcia", "Rodriguez"];
+const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien", "Raj", "Priya"];
+const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh", "Gupta", "Khan"];
+const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna", "Viktor", "Elena"];
+const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov", "Kowalski", "Andersson"];
+
+const getRandomName = () => {
+    const regionChoice = Math.random();
+    let firstNames, lastNames;
+    if (regionChoice < 0.33) { // American
+        firstNames = americanFirstNames;
+        lastNames = americanLastNames;
+    } else if (regionChoice < 0.66) { // Asian
+        firstNames = asianFirstNames;
+        lastNames = asianLastNames;
+    } else { // European
+        firstNames = europeanFirstNames;
+        lastNames = europeanLastNames;
+    }
+    const randomFirstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+    const randomLastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+    return `${randomFirstName} ${randomLastName}`;
+};
+
 
 export default function AdminTransactionsPage() {
   const [transactions, setTransactions] = useState<AdminTransactionView[]>([]);
@@ -70,10 +95,14 @@ export default function AdminTransactionsPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTransactionForDetail, setSelectedTransactionForDetail] = useState<AdminTransactionView | null>(null);
 
+  const displayedUserNames = useMemo(() => new Map<string, string>(), []);
+
+
   useEffect(() => {
     const fetchTransactions = async () => {
       setIsLoading(true);
       setError(null);
+      displayedUserNames.clear(); // Clear map on new fetch
       try {
         const transactionsCollectionRef = collection(db, "transactions");
         const q = query(transactionsCollectionRef, orderBy("date", "desc"));
@@ -88,10 +117,20 @@ export default function AdminTransactionsPage() {
             } else {
                 transactionDate = new Date(data.date); // Fallback attempt
             }
+          
+          let userNameToDisplay = data.userName;
+          if (!userNameToDisplay) {
+            if (!displayedUserNames.has(data.userId)) {
+                displayedUserNames.set(data.userId, getRandomName());
+            }
+            userNameToDisplay = displayedUserNames.get(data.userId);
+          }
+
           return {
             id: doc.id,
             ...data,
             date: transactionDate,
+            userName: userNameToDisplay, // Use the potentially generated name
           } as AdminTransactionView;
         });
         setTransactions(fetchedTransactions);
@@ -103,7 +142,7 @@ export default function AdminTransactionsPage() {
       }
     };
     fetchTransactions();
-  }, []);
+  }, [displayedUserNames]); // Add displayedUserNames to dependencies if you want it to re-trigger (though clearing it inside is usually enough for refetch)
 
   const handleViewDetails = (transaction: AdminTransactionView) => {
     setSelectedTransactionForDetail(transaction);
@@ -114,7 +153,7 @@ export default function AdminTransactionsPage() {
     const matchesSearch = (
       txn.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       txn.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) || // Use txn.userName which might be the generated one
       txn.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
     const matchesFlag = filterFlagged ? txn.isFlagged : true;
@@ -187,7 +226,7 @@ export default function AdminTransactionsPage() {
                     <TableRow key={txn.id} className={txn.isFlagged ? "bg-destructive/10 hover:bg-destructive/20" : ""}>
                       <TableCell className="font-mono text-xs">{txn.id}</TableCell>
                       <TableCell>
-                        <div>{txn.userName || `User ${txn.userId.substring(0,6)}...`}</div>
+                        <div>{txn.userName}</div> {/* userName is now pre-filled with random if original was missing */}
                         <div className="text-xs text-muted-foreground">{txn.userId}</div>
                       </TableCell>
                       <TableCell>{formatDateDisplay(txn.date)}</TableCell>
@@ -223,3 +262,4 @@ export default function AdminTransactionsPage() {
     </div>
   );
 }
+
