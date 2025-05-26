@@ -5,7 +5,7 @@
 import { assessKYCRisk, type AssessKYCRiskInput, type AssessKYCRiskOutput } from "@/ai/flows/kyc-risk-assessment";
 import { db } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket } from "@/types";
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails } from "@/types";
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs } from "firebase/firestore";
 import { fileToDataURI } from "./file-utils";
 import { revalidatePath } from "next/cache";
@@ -138,11 +138,6 @@ interface RecordTransferResult {
   error?: string;
 }
 
-interface AuthorizationDetails {
-  cotCode?: string;
-  imfCode?: string;
-  taxCode?: string;
-}
 
 export async function recordTransferAction(
   userId: string,
@@ -174,6 +169,35 @@ export async function recordTransferAction(
       const updatedBalance = currentBalance - totalDeduction;
       transaction.update(userDocRef, { balance: updatedBalance });
 
+      // Construct recipientDetails carefully
+      const recipientDetails: TransactionType['recipientDetails'] = {
+        name: transferData.recipientName,
+        accountNumber: 'recipientAccountNumber' in transferData ? transferData.recipientAccountNumber : transferData.recipientAccountNumberIBAN,
+        bankName: transferData.bankName,
+      };
+      if ('swiftBic' in transferData && transferData.swiftBic) {
+        recipientDetails.swiftBic = transferData.swiftBic;
+      }
+      if ('country' in transferData && transferData.country) {
+        recipientDetails.country = transferData.country;
+      }
+
+      // Construct authorizationDetails carefully
+      const authDetails: TransactionType['authorizationDetails'] = {
+        cot: parseFloat(cotAmount.toFixed(2)),
+        imfCodeProvided: !!authorizations.imfCode,
+      };
+      if (authorizations.cotCode) {
+        authDetails.cotCode = authorizations.cotCode;
+      }
+      if (authorizations.imfCode) {
+        authDetails.imfCode = authorizations.imfCode;
+      }
+      if (authorizations.taxCode) {
+        authDetails.taxCode = authorizations.taxCode;
+      }
+
+
       const transactionsColRef = collection(db, "transactions");
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId,
@@ -183,20 +207,8 @@ export async function recordTransferAction(
         type: "transfer",
         status: "completed",
         currency: 'currency' in transferData ? transferData.currency : "USD", 
-        recipientDetails: {
-          name: transferData.recipientName,
-          accountNumber: 'recipientAccountNumber' in transferData ? transferData.recipientAccountNumber : transferData.recipientAccountNumberIBAN,
-          bankName: transferData.bankName,
-          swiftBic: 'swiftBic' in transferData ? transferData.swiftBic : undefined,
-          country: 'country' in transferData ? transferData.country : undefined,
-        },
-        authorizationDetails: { // Store the provided codes
-          cot: parseFloat(cotAmount.toFixed(2)),
-          cotCode: authorizations.cotCode,
-          imfCode: authorizations.imfCode,
-          taxCode: authorizations.taxCode,
-          imfCodeProvided: !!authorizations.imfCode, // Keep this for backward compatibility if needed, or remove
-        },
+        recipientDetails,
+        authorizationDetails: authDetails,
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
       
