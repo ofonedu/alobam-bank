@@ -12,30 +12,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PlusCircle, Trash2, Loader2, AlertTriangle, Info, KeyRound, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateAuthorizationCodeAction, getAuthorizationCodesAction, deleteAuthorizationCodeAction } from "@/lib/actions/admin-code-actions";
-import type { AuthorizationCode } from "@/types";
+import type { AuthorizationCode as OriginalAuthorizationCode } from "@/types"; // Keep original type for internal use if needed before client state
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { Timestamp } from "firebase/firestore";
+// No need for Firebase Timestamp here as dates will be JS Dates in state
 
-const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
+// Client-side representation of the code with JS Date objects
+interface ClientAuthorizationCode extends Omit<OriginalAuthorizationCode, 'createdAt' | 'expiresAt'> {
+    createdAt: Date;
+    expiresAt?: Date;
+}
+
+
+const formatDateDisplay = (dateInput: Date | undefined): string => {
     if (!dateInput) return "N/A";
-    let date: Date;
-    if ((dateInput as Timestamp)?.toDate && typeof (dateInput as Timestamp).toDate === 'function') {
-      date = (dateInput as Timestamp).toDate();
-    } else if (dateInput instanceof Date) {
-      date = dateInput;
-    } else {
-      try {
-        const parsed = new Date(dateInput as string | number);
-        if (!isNaN(parsed.getTime())) {
-          date = parsed;
-        } else {
-          return "Invalid Date";
-        }
-      } catch {
-        return "Invalid Date";
-      }
-    }
-    return date.toLocaleString();
+    // dateInput is already a JS Date object here
+    return dateInput.toLocaleString();
   };
 
 export default function AuthorizationCodesPage() {
@@ -46,7 +37,7 @@ export default function AuthorizationCodesPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
 
-  const [codes, setCodes] = useState<AuthorizationCode[]>([]);
+  const [codes, setCodes] = useState<ClientAuthorizationCode[]>([]); // State will hold ClientAuthorizationCode
   const [isLoadingCodes, setIsLoadingCodes] = useState(true);
   const [fetchCodesError, setFetchCodesError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -55,12 +46,12 @@ export default function AuthorizationCodesPage() {
     setIsLoadingCodes(true);
     setFetchCodesError(null);
     try {
-      const result = await getAuthorizationCodesAction();
+      const result = await getAuthorizationCodesAction(); // This now returns codes with string dates
       if (result.success && result.codes) {
         setCodes(result.codes.map(code => ({
-          ...code,
-          createdAt: (code.createdAt as Timestamp)?.toDate ? (code.createdAt as Timestamp).toDate() : new Date(code.createdAt as Date | string | number),
-          expiresAt: code.expiresAt ? ((code.expiresAt as Timestamp)?.toDate ? (code.expiresAt as Timestamp).toDate() : new Date(code.expiresAt as Date | string | number)) : undefined,
+          ...code, // id, value, type, userId, isUsed, generatedBy are fine
+          createdAt: new Date(code.createdAt), // code.createdAt is an ISO string
+          expiresAt: code.expiresAt ? new Date(code.expiresAt) : undefined, // code.expiresAt is an ISO string or undefined
         })));
       } else {
         setFetchCodesError(result.error || "Failed to load authorization codes.");

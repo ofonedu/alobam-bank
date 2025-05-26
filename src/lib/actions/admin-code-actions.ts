@@ -9,10 +9,16 @@ import { revalidatePath } from "next/cache";
 // In-memory store for demo purposes. Replace with Firestore for production.
 let mockCodes: AuthorizationCode[] = [];
 
+// Define a type for the serializable version of AuthorizationCode
+interface SerializableAuthorizationCode extends Omit<AuthorizationCode, 'createdAt' | 'expiresAt'> {
+  createdAt: string; // ISO string
+  expiresAt?: string; // ISO string or undefined
+}
+
 interface GenerateCodeResult {
   success: boolean;
   message?: string;
-  code?: AuthorizationCode;
+  code?: AuthorizationCode; // Original type can be used for the newly generated one if not immediately passed to client
   error?: string;
 }
 
@@ -45,7 +51,7 @@ export async function generateAuthorizationCodeAction(
 
 interface GetCodesResult {
   success: boolean;
-  codes?: AuthorizationCode[];
+  codes?: SerializableAuthorizationCode[]; // Return serializable codes
   error?: string;
 }
 
@@ -53,7 +59,14 @@ export async function getAuthorizationCodesAction(): Promise<GetCodesResult> {
   try {
     // Simulate fetching. Sort by creation date descending for demo.
     const sortedCodes = [...mockCodes].sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-    return { success: true, codes: sortedCodes };
+    
+    const serializableCodes: SerializableAuthorizationCode[] = sortedCodes.map(code => ({
+      ...code,
+      createdAt: code.createdAt.toDate().toISOString(),
+      expiresAt: code.expiresAt ? code.expiresAt.toDate().toISOString() : undefined,
+    }));
+    
+    return { success: true, codes: serializableCodes };
   } catch (error: any) {
     console.error("Error fetching authorization codes:", error);
     return { success: false, error: "Failed to fetch codes." };
