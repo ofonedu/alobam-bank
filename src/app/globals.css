@@ -1,92 +1,109 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+body {
+  font-family: var(--font-open-sans), Arial, Helvetica, sans-serif; /* Changed default font */
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 @layer base {
   :root {
-    --background: 210 67% 95.1%; /* #EAF2FA */
-    --foreground: 215 25% 27%; /* Dark grayish blue for text */
+    /* Wohana Funds Theme */
+    --background: 220 13% 96%; /* #F5F5F5 Light Gray */
+    --foreground: 211 100% 14%; /* #002147 Deep Blue */
 
-    --card: 0 0% 100%; /* White cards */
-    --card-foreground: 215 25% 27%;
+    --card: 0 0% 100%; /* #FFFFFF White */
+    --card-foreground: 211 100% 14%; /* Deep Blue */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 27%;
+    --popover-foreground: 211 100% 14%;
 
-    --primary: 214 63.9% 55.7%; /* #4681D4 */
-    --primary-foreground: 0 0% 100%; /* White */
+    --primary: 211 100% 14%; /* #002147 Deep Blue */
+    --primary-foreground: 0 0% 100%; /* White for text on Deep Blue */
 
-    --secondary: 210 60% 90%; /* Lighter blue */
-    --secondary-foreground: 214 63.9% 55.7%; /* Primary blue for text on secondary */
+    --secondary: 42 100% 50%; /* #FFD700 Gold */
+    --secondary-foreground: 0 0% 100%; /* White for text on Gold */
 
-    --muted: 210 50% 85%; /* Muted blue-gray */
-    --muted-foreground: 215 20% 45%; /* Darker muted text */
+    --muted: 210 30% 90%; /* Lighter gray for muted backgrounds */
+    --muted-foreground: 210 25% 45%; /* Darker gray for muted text */
 
-    --accent: 117 32.9% 54.3%; /* #64B360 */
-    --accent-foreground: 0 0% 100%; /* White */
+    --accent: 42 100% 50%; /* #FFD700 Gold (can be used for accents if secondary is primary button) */
+    --accent-foreground: 211 100% 14%; /* Deep Blue */
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 210 30% 85%; /* Light blue-gray border */
-    --input: 0 0% 100%; /* White input background, border will be --border */
-    --ring: 214 63.9% 55.7%; /* Primary blue for rings */
+    --border: 210 20% 80%; /* Slightly darker gray for borders */
+    --input: 210 20% 90%; /* Lighter gray for input backgrounds */
+    --ring: 42 100% 50%; /* Gold for focus rings */
 
     --radius: 0.5rem;
 
-    /* Chart colors - can remain default or be themed */
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 42 100% 50%; /* Gold */
+    --chart-2: 211 100% 25%; /* Darker Blue */
+    --chart-3: 211 100% 14%; /* Deep Blue */
+    --chart-4: 45 85% 60%; /* Lighter Gold/Orange */
+    --chart-5: 200 50% 50%; /* Muted Blue */
+    
+    /* Sidebar specific variables adjusted to the new theme */
+    --sidebar-background: 211 100% 10%; /* Very Dark Blue, slightly off #002147 */
+    --sidebar-foreground: 0 0% 95%; /* Off-white/Light Gray for text */
+    --sidebar-primary: 42 100% 50%; /* Gold for active/hover states */
+    --sidebar-primary-foreground: 211 100% 14%; /* Deep blue for text on gold */
+    --sidebar-accent: 42 100% 55%; /* Slightly brighter Gold */
+    --sidebar-accent-foreground: 211 100% 14%;
+    --sidebar-border: 211 100% 20%; /* Darker blue for borders */
+    --sidebar-ring: 42 100% 50%;
 
-    /* Sidebar specific colors */
-    --sidebar-background: 0 0% 98%; /* Almost white */
-    --sidebar-foreground: 240 5.3% 26.1%; /* Dark gray */
-    --sidebar-primary: 214 63.9% 55.7%; /* App primary for sidebar active items */
-    --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 210 60% 92%; /* Very light blue for hover, derived from main background */
-    --sidebar-accent-foreground: 214 63.9% 55.7%; /* Primary color text on hover */
-    --sidebar-border: 210 30% 88%; /* Slightly lighter border for sidebar */
-    --sidebar-ring: 214 63.9% 55.7%; /* App primary for ring */
+    /* Define font variables */
+    --font-montserrat: 'Montserrat', sans-serif;
+    --font-open-sans: 'Open Sans', sans-serif;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 214 63.9% 55.7%; /* #4681D4 */
-    --primary-foreground: 0 0% 100%; /* White */
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 117 32.9% 54.3%; /* #64B360 */
-    --accent-foreground: 0 0% 100%; /* White */
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 214 63.9% 55.7%; /* Primary blue for rings */
-    
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Wohana Funds Dark Theme */
+    --background: 211 100% 10%; /* Very Dark Blue */
+    --foreground: 0 0% 95%; /* Off-white/Light Gray */
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 214 63.9% 55.7%; /* App primary for sidebar active items */
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 214 63.9% 55.7%;
+    --card: 211 100% 14%; /* #002147 Deep Blue */
+    --card-foreground: 0 0% 95%; /* Off-white/Light Gray */
+
+    --popover: 211 100% 8%; /* Even Darker Blue for popovers */
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 42 100% 50%; /* #FFD700 Gold - Primary action color in dark mode */
+    --primary-foreground: 211 100% 14%; /* Deep Blue for text on Gold */
+
+    --secondary: 211 100% 20%; /* Darker Blue for secondary elements */
+    --secondary-foreground: 0 0% 95%; /* Light Gray/White */
+
+    --muted: 211 100% 18%; /* Darker blue for muted backgrounds */
+    --muted-foreground: 210 25% 75%; /* Lighter gray for muted text */
+
+    --accent: 42 100% 55%; /* Brighter Gold for accents */
+    --accent-foreground: 211 100% 10%; 
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 211 100% 25%; /* Dark blue for borders */
+    --input: 211 100% 18%; /* Dark blue for input backgrounds */
+    --ring: 42 100% 50%; /* Gold for focus rings */
+    
+    /* Sidebar dark theme adjustments */
+    --sidebar-background: 211 100% 8%; 
+    --sidebar-foreground: 0 0% 90%; 
+    --sidebar-primary: 42 100% 50%; /* Gold for active/hover */
+    --sidebar-primary-foreground: 211 100% 14%; /* Deep blue for text on gold */
+    --sidebar-accent: 42 100% 55%; 
+    --sidebar-accent-foreground: 211 100% 14%;
+    --sidebar-border: 211 100% 18%; 
+    --sidebar-ring: 42 100% 50%;
   }
 }
 
@@ -97,4 +114,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-montserrat); /* Apply Montserrat to all headings */
+  }
+}
+
+/* Custom button styles for Wohana Funds if needed */
+.btn-gold {
+  @apply bg-secondary text-primary-foreground hover:bg-secondary/90;
+}
+
+.btn-outline-primary {
+  @apply border border-primary text-primary bg-transparent hover:bg-primary hover:text-primary-foreground;
 }
