@@ -133,6 +133,15 @@ export default function KYCPage() {
                   Reviewed on: {formatDate(kycData.reviewedAt)}
                 </p>
               )}
+               {kycData?.rejectionReason && kycData.status === 'rejected' && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Submission Rejected</AlertTitle>
+                  <AlertDescription>
+                    Reason: {kycData.rejectionReason}
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
           
@@ -140,7 +149,7 @@ export default function KYCPage() {
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>AI Risk Assessment Details</CardTitle>
-                <CardDescription>Summary of the automated risk check.</CardDescription>
+                <CardDescription>Summary of the automated risk check (if performed).</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <p><strong>Overall Risk Level:</strong> <Badge variant={kycData.riskAssessment.riskLevel === 'high' ? 'destructive' : kycData.riskAssessment.riskLevel === 'medium' ? 'secondary' : 'default' }>{kycData.riskAssessment.riskLevel.toUpperCase()}</Badge></p>

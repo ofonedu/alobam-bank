@@ -133,9 +133,9 @@ export function KYCDetailModal({
 
           {/* Right Column: AI Risk Assessment & Actions */}
           <div className="space-y-4">
-            <h3 className="font-semibold text-lg mb-2 border-b pb-1">AI Risk Assessment</h3>
             {kycItem.riskAssessment ? (
               <>
+                <h3 className="font-semibold text-lg mb-2 border-b pb-1">AI Risk Assessment</h3>
                 <InfoPill 
                     icon={<BarChart3 className="h-4 w-4"/>} 
                     label="Overall Risk Level" 
@@ -155,10 +155,12 @@ export function KYCDetailModal({
                 )}
               </>
             ) : (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>No AI Assessment</AlertTitle>
-                <AlertDescription>AI risk assessment data is not available for this submission.</AlertDescription>
+              <Alert variant="default" className="border-blue-500">
+                <AlertTriangle className="h-4 w-4 text-blue-500" />
+                <AlertTitle className="text-blue-700">No AI Assessment Available</AlertTitle>
+                <AlertDescription className="text-blue-600">
+                  This submission was processed without AI risk assessment or AI assessment data is not available. Please review manually.
+                </AlertDescription>
               </Alert>
             )}
              <div className="pt-4">

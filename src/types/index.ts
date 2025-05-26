@@ -29,7 +29,7 @@ export interface UserProfile {
 }
 
 export interface AuthorizationDetails {
-  cot?: number; // The calculated COT amount
+  cot?: number; 
   cotCode?: string;
   imfCode?: string;
   taxCode?: string;
@@ -83,7 +83,7 @@ export interface KYCData {
   reviewedAt?: Date | Timestamp;
   reviewedBy?: string;
   rejectionReason?: string;
-  riskAssessment?: {
+  riskAssessment?: { // Now optional
     riskLevel: string;
     fraudScore: number;
     identityVerified: boolean;
@@ -140,6 +140,7 @@ export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'
   userEmail?: string;
   submittedAt: Date; 
   reviewedAt?: Date;  
+  // riskAssessment is inherited from KYCData and is optional
 }
 
 
@@ -326,7 +327,7 @@ export interface COTConfirmationDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   transferData: LocalTransferData | InternationalTransferData | null;
-  cotPercentage: number; // Added
+  cotPercentage: number; 
   onConfirm: (cotCode: string) => void;
   onCancel: () => void;
 }

@@ -11,13 +11,13 @@ import { fileToDataURI } from "./file-utils";
 import { revalidatePath } from "next/cache";
 import { sendTransactionalEmail, getUserEmail } from "./email-service";
 import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions"; 
-import { getPlatformSettingsAction } from "./actions/admin-settings-actions"; // Corrected import path
+import { getPlatformSettingsAction } from "./actions/admin-settings-actions"; 
 
 export interface KYCSubmissionResult {
   success: boolean;
   message: string;
   kycData?: KYCData;
-  error?: string | Record<string, string[]>; // Allow string for general errors or object for field errors
+  error?: string | Record<string, string[]>; 
 }
 
 export async function submitKycAction(
@@ -41,29 +41,32 @@ export async function submitKycAction(
     }
     const photoFile = governmentIdPhoto[0] as File;
 
-    const photoDataUri = await fileToDataURI(photoFile);
+    // For simple KYC, we skip AI assessment. Photo is still collected.
+    // const photoDataUri = await fileToDataURI(photoFile);
 
-    const aiInput: AssessKYCRiskInput = {
-      fullName,
-      dateOfBirth,
-      address,
-      governmentId,
-      photoDataUri,
-    };
+    // const aiInput: AssessKYCRiskInput = {
+    //   fullName,
+    //   dateOfBirth,
+    //   address,
+    //   governmentId,
+    //   photoDataUri,
+    // };
 
-    let riskAssessment: AssessKYCRiskOutput["riskAssessment"] | undefined;
-    try {
-        const aiOutput = await assessKYCRisk(aiInput);
-        riskAssessment = aiOutput.riskAssessment;
-    } catch (aiError: any) {
-        console.error("AI Risk Assessment Error:", aiError);
-        riskAssessment = {
-            riskLevel: "unknown",
-            fraudScore: -1,
-            identityVerified: false,
-            flags: ["AI assessment failed: " + (aiError.message || "Unknown AI error")],
-        };
-    }
+    // let riskAssessment: AssessKYCRiskOutput["riskAssessment"] | undefined;
+    // try {
+    //     const aiOutput = await assessKYCRisk(aiInput);
+    //     riskAssessment = aiOutput.riskAssessment;
+    // } catch (aiError: any) {
+    //     console.error("AI Risk Assessment Error:", aiError);
+    //     // For simple KYC, we might not even populate this if AI is fully removed.
+    //     // If we want to log the failure but proceed with manual review:
+    //     // riskAssessment = {
+    //     //     riskLevel: "unknown",
+    //     //     fraudScore: -1,
+    //     //     identityVerified: false,
+    //     //     flags: ["AI assessment failed: " + (aiError.message || "Unknown AI error")],
+    //     // };
+    // }
     
     const kycDocRef = doc(db, "kycData", userId);
     const userDocRef = doc(db, "users", userId);
@@ -76,17 +79,11 @@ export async function submitKycAction(
       governmentId,
       photoUrl: "placeholder_for_actual_storage_url", 
       photoFileName: photoFile.name,
-      status: riskAssessment?.identityVerified ? "pending_review" : "rejected",
+      status: "pending_review", // All submissions go to pending_review
       submittedAt: new Date(),
-      riskAssessment,
+      riskAssessment: undefined, // No AI risk assessment for simple KYC
     };
     
-    if (riskAssessment?.riskLevel === 'high' || !riskAssessment?.identityVerified) {
-        newKycData.status = 'rejected';
-    } else if (riskAssessment?.identityVerified && (riskAssessment?.riskLevel === 'low' || riskAssessment?.riskLevel === 'medium')) {
-        newKycData.status = 'pending_review';
-    }
-
     await setDoc(kycDocRef, newKycData, { merge: true });
 
     const userProfileUpdate: Partial<UserProfile> = {
@@ -197,6 +194,7 @@ export async function recordTransferAction(
 
       const recipientDetails: Partial<TransactionType['recipientDetails']> = {};
       if (transferData.recipientName) recipientDetails.name = transferData.recipientName;
+      
       if ('recipientAccountNumber' in transferData && transferData.recipientAccountNumber) {
         recipientDetails.accountNumber = transferData.recipientAccountNumber;
       } else if ('recipientAccountNumberIBAN' in transferData && transferData.recipientAccountNumberIBAN) {
@@ -205,15 +203,15 @@ export async function recordTransferAction(
       if (transferData.bankName) recipientDetails.bankName = transferData.bankName;
 
 
-      if ('swiftBic' in transferData && transferData.swiftBic) {
+      if ('swiftBic' in transferData && transferData.swiftBic && transferData.swiftBic.trim() !== "") {
         recipientDetails.swiftBic = transferData.swiftBic;
       }
-      if ('country' in transferData && transferData.country) {
+      if ('country' in transferData && transferData.country && transferData.country.trim() !== "") {
         recipientDetails.country = transferData.country;
       }
       
-      const authDetailsToSave: AuthorizationDetails = {
-        cot: parseFloat(cotAmount.toFixed(2)), // COT amount is always recorded
+      const authDetailsToSave: Partial<AuthorizationDetails> = { // Ensure it's partial to allow conditional assignment
+        cot: parseFloat(cotAmount.toFixed(2)), 
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
       if (authorizations.imfCode) authDetailsToSave.imfCode = authorizations.imfCode;
@@ -230,7 +228,7 @@ export async function recordTransferAction(
         status: "completed",
         currency: 'currency' in transferData ? transferData.currency : "USD", 
         recipientDetails: Object.keys(recipientDetails).length > 0 ? recipientDetails as TransactionType['recipientDetails'] : undefined,
-        authorizationDetails: Object.keys(authDetailsToSave).length > 1 ? authDetailsToSave : undefined, // Only save if more than just COT amount is present
+        authorizationDetails: Object.keys(authDetailsToSave).length > 1 ? authDetailsToSave as AuthorizationDetails : undefined, 
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
       
@@ -536,5 +534,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
-
