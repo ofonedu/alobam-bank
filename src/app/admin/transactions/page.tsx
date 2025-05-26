@@ -25,13 +25,13 @@ const TransactionStatusBadge = ({ status }: { status: AdminTransactionView["stat
 
 const TransactionTypeBadge = ({ type }: { type: AdminTransactionView["type"] }) => {
   let typeName = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  if (type === 'manual_credit' || type === 'credit') typeName = 'Credit';
-  else if (type === 'manual_debit' || type === 'debit') typeName = 'Debit';
+  if (type === 'credit') typeName = 'Credit';
+  else if (type === 'debit') typeName = 'Debit';
   
   let className = "capitalize";
-  if (['debit', 'manual_debit', 'withdrawal', 'fee', 'loan_repayment', 'transfer'].includes(type)) {
+  if (['debit', 'withdrawal', 'fee', 'loan_repayment', 'transfer'].includes(type)) {
     className += " text-red-600";
-  } else if (['credit', 'manual_credit', 'deposit', 'loan_disbursement'].includes(type)) {
+  } else if (['credit', 'deposit', 'loan_disbursement'].includes(type)) {
     className += " text-green-600";
   }
   return <span className={className}>{typeName}</span>;
@@ -114,7 +114,7 @@ export default function AdminTransactionsPage() {
     const matchesSearch = (
       txn.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       txn.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      txn.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       txn.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
     const matchesFlag = filterFlagged ? txn.isFlagged : true;
@@ -187,7 +187,7 @@ export default function AdminTransactionsPage() {
                     <TableRow key={txn.id} className={txn.isFlagged ? "bg-destructive/10 hover:bg-destructive/20" : ""}>
                       <TableCell className="font-mono text-xs">{txn.id}</TableCell>
                       <TableCell>
-                        <div>{txn.userName || 'N/A'}</div>
+                        <div>{txn.userName || `User ${txn.userId.substring(0,6)}...`}</div>
                         <div className="text-xs text-muted-foreground">{txn.userId}</div>
                       </TableCell>
                       <TableCell>{formatDateDisplay(txn.date)}</TableCell>

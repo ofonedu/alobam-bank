@@ -5,11 +5,12 @@
 import { assessKYCRisk, type AssessKYCRiskInput, type AssessKYCRiskOutput } from "@/ai/flows/kyc-risk-assessment";
 import { db } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails } from "@/types";
-import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs } from "firebase/firestore";
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, PlatformSettings } from "@/types";
+import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch } from "firebase/firestore";
 import { fileToDataURI } from "./file-utils";
 import { revalidatePath } from "next/cache";
 import { sendTransactionalEmail, getUserEmail } from "./email-service";
+import { validateAuthorizationCode, markCodeAsUsed, getPlatformSettingsAction } from "./actions/admin-code-actions"; // Added getPlatformSettingsAction
 
 export interface KYCSubmissionResult {
   success: boolean;
@@ -142,14 +143,38 @@ interface RecordTransferResult {
 export async function recordTransferAction(
   userId: string,
   transferData: LocalTransferData | InternationalTransferData,
-  authorizations: AuthorizationDetails
+  authorizations: Partial<AuthorizationDetails>, // Make fields optional for collected codes
+  platformCotPercentage?: number // Pass this in from the form
 ): Promise<RecordTransferResult> {
   try {
-    const MOCK_COT_PERCENTAGE = 0.01; // 1%
-    const cotAmount = transferData.amount * MOCK_COT_PERCENTAGE;
+    const settingsResult = await getPlatformSettingsAction();
+    const cotPercentageToUse = platformCotPercentage ?? settingsResult.settings?.cotPercentage ?? 0.01;
+
+    const cotAmount = transferData.amount * cotPercentageToUse;
     const totalDeduction = transferData.amount + cotAmount;
 
     let userEmail: string | null = null;
+
+    // Code validation step
+    if (settingsResult.settings?.requireCOTConfirmation && authorizations.cotCode) {
+        const validation = await validateAuthorizationCode(authorizations.cotCode, 'COT', userId);
+        if (!validation.valid) {
+            return { success: false, message: validation.message || "Invalid COT code." };
+        }
+    }
+    if (settingsResult.settings?.requireIMFAuthorization && authorizations.imfCode) {
+        const validation = await validateAuthorizationCode(authorizations.imfCode, 'IMF', userId);
+        if (!validation.valid) {
+            return { success: false, message: validation.message || "Invalid IMF code." };
+        }
+    }
+    if (settingsResult.settings?.requireTaxClearance && authorizations.taxCode) {
+        const validation = await validateAuthorizationCode(authorizations.taxCode, 'TAX', userId);
+        if (!validation.valid) {
+            return { success: false, message: validation.message || "Invalid Tax code." };
+        }
+    }
+
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", userId);
@@ -169,7 +194,6 @@ export async function recordTransferAction(
       const updatedBalance = currentBalance - totalDeduction;
       transaction.update(userDocRef, { balance: updatedBalance });
 
-      // Construct recipientDetails carefully
       const recipientDetails: TransactionType['recipientDetails'] = {
         name: transferData.recipientName,
         accountNumber: 'recipientAccountNumber' in transferData ? transferData.recipientAccountNumber : transferData.recipientAccountNumberIBAN,
@@ -181,21 +205,13 @@ export async function recordTransferAction(
       if ('country' in transferData && transferData.country) {
         recipientDetails.country = transferData.country;
       }
-
-      // Construct authorizationDetails carefully
-      const authDetails: TransactionType['authorizationDetails'] = {
+      
+      const authDetailsToSave: AuthorizationDetails = {
         cot: parseFloat(cotAmount.toFixed(2)),
-        imfCodeProvided: !!authorizations.imfCode,
       };
-      if (authorizations.cotCode) {
-        authDetails.cotCode = authorizations.cotCode;
-      }
-      if (authorizations.imfCode) {
-        authDetails.imfCode = authorizations.imfCode;
-      }
-      if (authorizations.taxCode) {
-        authDetails.taxCode = authorizations.taxCode;
-      }
+      if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
+      if (authorizations.imfCode) authDetailsToSave.imfCode = authorizations.imfCode;
+      if (authorizations.taxCode) authDetailsToSave.taxCode = authorizations.taxCode;
 
 
       const transactionsColRef = collection(db, "transactions");
@@ -208,12 +224,26 @@ export async function recordTransferAction(
         status: "completed",
         currency: 'currency' in transferData ? transferData.currency : "USD", 
         recipientDetails,
-        authorizationDetails: authDetails,
+        authorizationDetails: authDetailsToSave,
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData);
       
       return { balance: updatedBalance, transactionId: transactionDocRef.id };
     });
+
+    // Mark codes as used after successful transaction
+    const batch = writeBatch(db);
+    if (settingsResult.settings?.requireCOTConfirmation && authorizations.cotCode) {
+        await markCodeAsUsed(authorizations.cotCode, 'COT', batch);
+    }
+    if (settingsResult.settings?.requireIMFAuthorization && authorizations.imfCode) {
+        await markCodeAsUsed(authorizations.imfCode, 'IMF', batch);
+    }
+    if (settingsResult.settings?.requireTaxClearance && authorizations.taxCode) {
+        await markCodeAsUsed(authorizations.taxCode, 'TAX', batch);
+    }
+    await batch.commit();
+
 
     if (userEmail && transactionResult.transactionId) {
       await sendTransactionalEmail({
@@ -500,5 +530,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
-    

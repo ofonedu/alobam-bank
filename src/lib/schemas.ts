@@ -12,7 +12,7 @@ export const RegisterSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(8, "Password must be at least 8 characters."),
   phoneNumber: z.string().min(10, "Phone number seems too short.").optional().or(z.literal('')),
-  accountType: z.string().min(1, "Account type is required."), // Reverted
+  accountType: z.string().min(1, "Account type is required."),
   currency: z.string().min(3, "Currency code is required.").default("USD"),
 });
 export type RegisterFormData = z.infer<typeof RegisterSchema>;
@@ -113,6 +113,7 @@ export const GeneralSettingsSchema = z.object({
   platformName: z.string().min(1, "Platform name is required.").optional(),
   supportEmail: z.string().email("Invalid email address.").optional(),
   maintenanceMode: z.boolean().optional(),
+  cotPercentage: z.coerce.number().min(0, "COT percentage cannot be negative.").max(100, "COT percentage cannot exceed 100.").optional(),
   requireCOTConfirmation: z.boolean().optional(),
   requireIMFAuthorization: z.boolean().optional(),
   requireTaxClearance: z.boolean().optional(),
@@ -251,5 +252,3 @@ export const FooterContentSchema = z.object({
   footerSocialMediaLinks: z.array(SocialMediaLinkSchema).optional(),
 });
 export type FooterContentFormData = z.infer<typeof FooterContentSchema>;
-
-    

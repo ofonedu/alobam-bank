@@ -21,6 +21,7 @@ export function COTConfirmationDialog({
   isOpen,
   onOpenChange,
   transferData,
+  cotPercentage,
   onConfirm,
   onCancel,
 }: COTConfirmationDialogProps) {
@@ -36,10 +37,10 @@ export function COTConfirmationDialog({
 
   useEffect(() => {
     if (transferData && isOpen) {
-      const MOCK_COT_PERCENTAGE = 0.01; // 1%
       const amount = transferData.amount || 0;
       const currencySymbol = 'currency' in transferData && transferData.currency ? transferData.currency : "$";
-      const cotAmount = amount * MOCK_COT_PERCENTAGE;
+      const effectiveCotPercentage = cotPercentage === undefined ? 0.01 : cotPercentage; // Use default if undefined
+      const cotAmount = amount * effectiveCotPercentage;
       const totalDeductionAmount = amount + cotAmount;
 
       setDisplayData({
@@ -48,10 +49,10 @@ export function COTConfirmationDialog({
         cot: cotAmount.toFixed(2),
         totalDeduction: totalDeductionAmount.toFixed(2),
       });
-      setCotCode(""); // Reset code input when dialog opens or data changes
+      setCotCode(""); 
       setError(null);
     }
-  }, [transferData, isOpen]);
+  }, [transferData, isOpen, cotPercentage]);
 
 
   const handleConfirm = async () => {
@@ -61,14 +62,20 @@ export function COTConfirmationDialog({
     }
     setError(null);
     setIsConfirming(true);
-    // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 500)); 
     onConfirm(cotCode); 
-    setIsConfirming(false); // Reset after onConfirm to allow parent to control dialog
+    setIsConfirming(false); 
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open && !isConfirming) { // Only call onCancel if dialog is closed by user, not programmatically
+        onCancel();
+    }
+    onOpenChange(open);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
@@ -88,7 +95,7 @@ export function COTConfirmationDialog({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Cost of Transfer (COT):</span>
+              <span className="text-muted-foreground">Cost of Transfer (COT @ {(cotPercentage * 100).toFixed(2)}%):</span>
               <span className="font-medium">
                  {displayData.currency}{displayData.cot}
               </span>
@@ -111,9 +118,6 @@ export function COTConfirmationDialog({
                 />
                 {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
-             <p className="text-xs text-muted-foreground pt-2">
-              Note: COT is estimated at 1% for this transaction. This amount, along with the transfer principal, will be deducted from your account upon successful completion of all authorization steps.
-            </p>
           </div>
         )}
         <DialogFooter className="gap-2 sm:justify-between">
@@ -129,5 +133,3 @@ export function COTConfirmationDialog({
     </Dialog>
   );
 }
-
-    

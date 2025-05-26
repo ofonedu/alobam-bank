@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail } from "lucide-react";
+import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail, Percent } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getPlatformSettingsAction, updatePlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 import type { PlatformSettings } from "@/types";
@@ -33,6 +33,7 @@ export default function AdminSettingsPage() {
       platformName: "Wohana Funds",
       supportEmail: "support@wohanafunds.com",
       maintenanceMode: false,
+      cotPercentage: 0.01, // Default 1%
       requireCOTConfirmation: false,
       requireIMFAuthorization: false,
       requireTaxClearance: false,
@@ -59,6 +60,7 @@ export default function AdminSettingsPage() {
           platformName: result.settings.platformName || "Wohana Funds",
           supportEmail: result.settings.supportEmail || "support@wohanafunds.com",
           maintenanceMode: result.settings.maintenanceMode || false,
+          cotPercentage: result.settings.cotPercentage === undefined ? 0.01 : result.settings.cotPercentage,
           requireCOTConfirmation: result.settings.requireCOTConfirmation || false,
           requireIMFAuthorization: result.settings.requireIMFAuthorization || false,
           requireTaxClearance: result.settings.requireTaxClearance || false,
@@ -88,6 +90,8 @@ export default function AdminSettingsPage() {
     if (result.success) {
       toast({ title: "Success", description: `${section} settings saved.` });
       if (section === "General & Platform" || section === "Transfer Authorization") { // Reload if logo or core platform settings change
+        // Consider more granular updates or context instead of full reload for better UX
+        // For now, reload is simple and ensures all parts of the app get the new settings.
         window.location.reload(); 
       }
     } else {
@@ -131,7 +135,7 @@ export default function AdminSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>General & Platform Settings</CardTitle>
-              <CardDescription>Basic platform information, branding, and maintenance mode.</CardDescription>
+              <CardDescription>Basic platform information, branding, fees and maintenance mode.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
@@ -187,20 +191,49 @@ export default function AdminSettingsPage() {
                 />
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Controller
+              <div className="grid md:grid-cols-2 gap-6">
+                 <FormField
                   control={generalForm.control}
-                  name="maintenanceMode"
+                  name="cotPercentage"
                   render={({ field }) => (
-                    <Switch
-                      id="maintenance-mode"
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
+                    <FormItem>
+                      <Label htmlFor="cotPercentage" className="flex items-center gap-1">
+                        <Percent className="h-4 w-4 text-muted-foreground" />Cost of Transfer (COT) Percentage
+                      </Label>
+                      <FormControl>
+                        <Input
+                          id="cotPercentage"
+                          type="number"
+                          step="0.01"
+                          placeholder="e.g., 0.5 for 0.5%"
+                          {...field}
+                          value={field.value !== undefined ? (field.value * 100).toString() : ''} // Display as %
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            field.onChange(isNaN(val) ? undefined : val / 100); // Store as decimal
+                          }}
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">Enter percentage (e.g., for 1%, enter 1).</FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                <Label htmlFor="maintenance-mode">Maintenance Mode</Label>
+                <FormField
+                    control={generalForm.control}
+                    name="maintenanceMode"
+                    render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm mt-2 md:mt-0">
+                        <div className="space-y-0.5">
+                            <Label htmlFor="maintenance-mode" className="text-base">Maintenance Mode</Label>
+                            <FormDescription className="text-xs">Temporarily disable user access.</FormDescription>
+                        </div>
+                        <FormControl><Switch id="maintenance-mode" checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                    )}
+                />
               </div>
+
               <p className="text-xs text-muted-foreground pt-2">Note: To change the main browser tab icon (favicon), replace the `favicon.ico` file in the `public` directory of your project and redeploy the application.</p>
             </CardContent>
           </Card>
@@ -245,7 +278,7 @@ export default function AdminSettingsPage() {
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm col-span-1">
                             <div className="space-y-0.5">
                             <Label htmlFor="requireTaxClearance" className="flex items-center gap-1 text-base"><FileUp className="h-4 w-4 text-muted-foreground"/>Require Tax Clearance</Label>
-                             <FormDescription className="text-xs">If enabled, users must upload a tax document.</FormDescription>
+                             <FormDescription className="text-xs">If enabled, users must provide a Tax code.</FormDescription>
                             </div>
                             <FormControl><Switch id="requireTaxClearance" checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                         </FormItem>
@@ -279,7 +312,6 @@ export default function AdminSettingsPage() {
                     <ListPlus className="h-4 w-4" /> Manage Account Types
                 </Link>
             </Button>
-            {/* Email Templates link removed */}
         </CardContent>
       </Card>
 
@@ -385,5 +417,3 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
-
-    

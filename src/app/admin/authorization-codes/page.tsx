@@ -9,23 +9,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PlusCircle, Trash2, Loader2, AlertTriangle, Info, KeyRound, Copy } from "lucide-react";
+import { PlusCircle, Trash2, Loader2, AlertTriangle, Info, KeyRound, Copy, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateAuthorizationCodeAction, getAuthorizationCodesAction, deleteAuthorizationCodeAction } from "@/lib/actions/admin-code-actions";
-import type { AuthorizationCode as OriginalAuthorizationCode } from "@/types"; // Keep original type for internal use if needed before client state
+import type { AuthorizationCode as OriginalAuthorizationCode } from "@/types"; 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-// No need for Firebase Timestamp here as dates will be JS Dates in state
 
-// Client-side representation of the code with JS Date objects
 interface ClientAuthorizationCode extends Omit<OriginalAuthorizationCode, 'createdAt' | 'expiresAt'> {
     createdAt: Date;
     expiresAt?: Date;
 }
 
-
 const formatDateDisplay = (dateInput: Date | undefined): string => {
     if (!dateInput) return "N/A";
-    // dateInput is already a JS Date object here
     return dateInput.toLocaleString();
   };
 
@@ -33,11 +29,11 @@ export default function AuthorizationCodesPage() {
   const { toast } = useToast();
   
   const [codeType, setCodeType] = useState<'COT' | 'IMF' | 'TAX'>('COT');
-  const [targetUserId, setTargetUserId] = useState(""); // Optional: for user-specific codes
+  const [targetUserId, setTargetUserId] = useState(""); 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
 
-  const [codes, setCodes] = useState<ClientAuthorizationCode[]>([]); // State will hold ClientAuthorizationCode
+  const [codes, setCodes] = useState<ClientAuthorizationCode[]>([]); 
   const [isLoadingCodes, setIsLoadingCodes] = useState(true);
   const [fetchCodesError, setFetchCodesError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -46,12 +42,12 @@ export default function AuthorizationCodesPage() {
     setIsLoadingCodes(true);
     setFetchCodesError(null);
     try {
-      const result = await getAuthorizationCodesAction(); // This now returns codes with string dates
+      const result = await getAuthorizationCodesAction(); 
       if (result.success && result.codes) {
         setCodes(result.codes.map(code => ({
-          ...code, // id, value, type, userId, isUsed, generatedBy are fine
-          createdAt: new Date(code.createdAt), // code.createdAt is an ISO string
-          expiresAt: code.expiresAt ? new Date(code.expiresAt) : undefined, // code.expiresAt is an ISO string or undefined
+          ...code, 
+          createdAt: new Date(code.createdAt), 
+          expiresAt: code.expiresAt ? new Date(code.expiresAt) : undefined, 
         })));
       } else {
         setFetchCodesError(result.error || "Failed to load authorization codes.");
@@ -78,10 +74,10 @@ export default function AuthorizationCodesPage() {
       toast({ 
         title: "Code Generated", 
         description: `New ${result.code.type} code: ${result.code.value}`,
-        duration: 10000, // Show longer to allow copying
+        duration: 10000, 
       });
-      await fetchCodes(); // Refresh the list
-      setTargetUserId(""); // Reset optional field
+      await fetchCodes(); 
+      setTargetUserId(""); 
     } else {
       setGenerationError(result.error || "Failed to generate code.");
       toast({ title: "Error", description: result.error || "Failed to generate code.", variant: "destructive" });
@@ -120,7 +116,7 @@ export default function AuthorizationCodesPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Generate New Authorization Code</CardTitle>
-          <CardDescription>Select code type and optionally assign to a user. Codes are currently mock and not stored securely.</CardDescription>
+          <CardDescription>Select code type and optionally assign to a user. Codes are stored in Firestore.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleGenerateCode} className="space-y-4">
@@ -167,7 +163,7 @@ export default function AuthorizationCodesPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Existing Authorization Codes</CardTitle>
-          <CardDescription>List of generated codes. These are currently mock and for demonstration only.</CardDescription>
+          <CardDescription>List of generated codes from Firestore.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingCodes && (
@@ -199,7 +195,7 @@ export default function AuthorizationCodesPage() {
                   <TableHead>User ID</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead>Expires At</TableHead>
-                  <TableHead>Is Used</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -216,7 +212,17 @@ export default function AuthorizationCodesPage() {
                     <TableCell>{code.userId || "N/A (Global)"}</TableCell>
                     <TableCell>{formatDateDisplay(code.createdAt)}</TableCell>
                     <TableCell>{formatDateDisplay(code.expiresAt) || "N/A"}</TableCell>
-                    <TableCell>{code.isUsed ? "Yes" : "No"}</TableCell>
+                    <TableCell>
+                        {code.isUsed ? (
+                            <Badge variant="outline" className="text-muted-foreground">
+                                <XCircle className="mr-1 h-3 w-3 text-destructive" /> Used
+                            </Badge>
+                        ) : (
+                            <Badge variant="default" className="bg-green-500 hover:bg-green-600 text-white">
+                                <CheckCircle className="mr-1 h-3 w-3" /> Active
+                            </Badge>
+                        )}
+                    </TableCell>
                     <TableCell className="text-right space-x-1">
                       <Button variant="ghost" size="icon" title="Delete Code" onClick={() => handleDeleteCode(code.id)} disabled={isDeleting === code.id} className="text-destructive hover:text-destructive/90">
                          {isDeleting === code.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -232,5 +238,3 @@ export default function AuthorizationCodesPage() {
     </div>
   );
 }
-
-    

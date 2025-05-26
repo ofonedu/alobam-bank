@@ -28,6 +28,13 @@ export interface UserProfile {
   isSuspended?: boolean;
 }
 
+export interface AuthorizationDetails {
+  cot?: number; // The calculated COT amount
+  cotCode?: string;
+  imfCode?: string;
+  taxCode?: string;
+}
+
 export interface Transaction {
   id: string;
   userId: string;
@@ -44,13 +51,7 @@ export interface Transaction {
     swiftBic?: string;
     country?: string;
   };
-  authorizationDetails?: {
-    cot?: number;
-    cotCode?: string; 
-    imfCodeProvided?: boolean; // Can be derived from imfCode presence
-    imfCode?: string; 
-    taxCode?: string; 
-  };
+  authorizationDetails?: AuthorizationDetails;
   relatedTransferId?: string;
   isFlagged?: boolean;
   notes?: string;
@@ -146,6 +147,7 @@ export interface PlatformSettings {
   platformName?: string;
   supportEmail?: string;
   maintenanceMode?: boolean;
+  cotPercentage?: number;
   autoApproveKycRiskLevel?: 'low' | 'medium' | 'high' | 'none';
   aiKycEnabled?: boolean;
   maxLoanAmount?: number;
@@ -324,6 +326,7 @@ export interface COTConfirmationDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   transferData: LocalTransferData | InternationalTransferData | null;
+  cotPercentage: number; // Added
   onConfirm: (cotCode: string) => void;
   onCancel: () => void;
 }
@@ -405,5 +408,3 @@ export interface AuthorizationCode {
   isUsed: boolean;
   generatedBy: string; // Admin User ID or "system"
 }
-
-    
