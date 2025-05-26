@@ -171,9 +171,6 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {noAccountTypesAvailable && (
-                     <SelectItem value="no-types" disabled>No account types available</SelectItem>
-                  )}
                   {accountTypesError && (
                      <SelectItem value="error-loading" disabled>{accountTypesError}</SelectItem>
                   )}
@@ -188,15 +185,6 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             </FormItem>
           )}
         />
-        {noAccountTypesAvailable && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Account Types Missing</AlertTitle>
-            <AlertDescription>
-              No account types are currently configured. An administrator needs to add account types in the admin settings before registration can be completed.
-            </AlertDescription>
-          </Alert>
-        )}
         <FormField
           control={form.control}
           name="currency"
@@ -220,7 +208,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full" disabled={isLoading || isLoadingAccountTypes || noAccountTypesAvailable}>
+        <Button type="submit" className="w-full" disabled={isLoading || isLoadingAccountTypes}>
           {(isLoading || isLoadingAccountTypes) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Create Account
         </Button>
