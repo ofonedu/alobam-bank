@@ -131,38 +131,9 @@ export function KYCDetailModal({
             </div>
           </div>
 
-          {/* Right Column: AI Risk Assessment & Actions */}
+          {/* Right Column: Actions & Status */}
           <div className="space-y-4">
-            {kycItem.riskAssessment ? (
-              <>
-                <h3 className="font-semibold text-lg mb-2 border-b pb-1">AI Risk Assessment</h3>
-                <InfoPill 
-                    icon={<BarChart3 className="h-4 w-4"/>} 
-                    label="Overall Risk Level" 
-                    value={<Badge variant={kycItem.riskAssessment.riskLevel === 'high' ? 'destructive' : kycItem.riskAssessment.riskLevel === 'medium' ? 'secondary' : 'default' }>{kycItem.riskAssessment.riskLevel.toUpperCase()}</Badge>} 
-                />
-                <InfoPill icon={<AlertOctagon className="h-4 w-4"/>} label="Fraud Score" value={`${kycItem.riskAssessment.fraudScore}/100`} />
-                <InfoPill icon={<CheckSquare className="h-4 w-4"/>} label="Identity Verified (AI)" value={kycItem.riskAssessment.identityVerified} />
-                {kycItem.riskAssessment.flags && kycItem.riskAssessment.flags.length > 0 && (
-                  <div>
-                    <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">AI Flags</Label>
-                    <ul className="list-disc list-inside text-sm pl-4 mt-1 space-y-0.5">
-                      {kycItem.riskAssessment.flags.map((flag, index) => (
-                        <li key={index} className="text-destructive">{flag}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <Alert variant="default" className="border-blue-500">
-                <AlertTriangle className="h-4 w-4 text-blue-500" />
-                <AlertTitle className="text-blue-700">No AI Assessment Available</AlertTitle>
-                <AlertDescription className="text-blue-600">
-                  This submission was processed without AI risk assessment or AI assessment data is not available. Please review manually.
-                </AlertDescription>
-              </Alert>
-            )}
+             <h3 className="font-semibold text-lg mb-2 border-b pb-1">KYC Status & Actions</h3>
              <div className="pt-4">
                 <Label htmlFor="currentStatus" className="text-xs font-semibold text-muted-foreground">Current KYC Status</Label>
                 <Badge id="currentStatus" variant={getStatusBadgeVariant(kycItem.status)} className="text-base mt-1 block w-fit">
@@ -215,3 +186,4 @@ export function KYCDetailModal({
     </Dialog>
   );
 }
+

@@ -9,7 +9,7 @@ import { fetchKycData, type KYCSubmissionResult } from "@/lib/actions";
 import type { KYCData } from "@/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldCheck, ShieldX, ShieldQuestion } from "lucide-react";
+import { Loader2, ShieldCheck, ShieldX, ShieldQuestion, AlertTriangle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import type { Timestamp } from "firebase/firestore";
 
@@ -35,7 +35,7 @@ export default function KYCPage() {
   const handleKycSuccess = (result: KYCSubmissionResult) => {
     if (result.kycData) {
         // Ensure dates are Date objects
-        const processedKycData = {
+        const processedKycData: KYCData = {
             ...result.kycData,
             submittedAt: result.kycData.submittedAt ? 
                             ((result.kycData.submittedAt as Timestamp)?.toDate ? 
@@ -145,29 +145,7 @@ export default function KYCPage() {
             </CardContent>
           </Card>
           
-          {kycData?.riskAssessment && (
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle>AI Risk Assessment Details</CardTitle>
-                <CardDescription>Summary of the automated risk check (if performed).</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p><strong>Overall Risk Level:</strong> <Badge variant={kycData.riskAssessment.riskLevel === 'high' ? 'destructive' : kycData.riskAssessment.riskLevel === 'medium' ? 'secondary' : 'default' }>{kycData.riskAssessment.riskLevel.toUpperCase()}</Badge></p>
-                <p><strong>Fraud Score:</strong> {kycData.riskAssessment.fraudScore}/100</p>
-                <p><strong>Identity Verified:</strong> {kycData.riskAssessment.identityVerified ? "Yes" : "No"}</p>
-                {kycData.riskAssessment.flags && kycData.riskAssessment.flags.length > 0 && (
-                  <div>
-                    <strong>Flags:</strong>
-                    <ul className="list-disc list-inside text-sm text-muted-foreground pl-4">
-                      {kycData.riskAssessment.flags.map((flag, index) => (
-                        <li key={index}>{flag}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+          {/* AI Risk Assessment Card Removed */}
 
           {(kycData?.status === "not_started" || kycData?.status === "rejected" || !kycData) &&
            (!userProfile || userProfile.kycStatus === "not_started" || userProfile.kycStatus === "rejected") && (
@@ -220,3 +198,4 @@ export default function KYCPage() {
     </div>
   );
 }
+

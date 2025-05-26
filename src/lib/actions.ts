@@ -2,7 +2,7 @@
 // src/lib/actions.ts
 "use server";
 
-import { assessKYCRisk, type AssessKYCRiskInput, type AssessKYCRiskOutput } from "@/ai/flows/kyc-risk-assessment";
+// Removed: import { assessKYCRisk, type AssessKYCRiskInput, type AssessKYCRiskOutput } from "@/ai/flows/kyc-risk-assessment";
 import { db } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
 import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, PlatformSettings } from "@/types";
@@ -40,33 +40,6 @@ export async function submitKycAction(
         return { success: false, message: "Government ID photo is missing." };
     }
     const photoFile = governmentIdPhoto[0] as File;
-
-    // For simple KYC, we skip AI assessment. Photo is still collected.
-    // const photoDataUri = await fileToDataURI(photoFile);
-
-    // const aiInput: AssessKYCRiskInput = {
-    //   fullName,
-    //   dateOfBirth,
-    //   address,
-    //   governmentId,
-    //   photoDataUri,
-    // };
-
-    // let riskAssessment: AssessKYCRiskOutput["riskAssessment"] | undefined;
-    // try {
-    //     const aiOutput = await assessKYCRisk(aiInput);
-    //     riskAssessment = aiOutput.riskAssessment;
-    // } catch (aiError: any) {
-    //     console.error("AI Risk Assessment Error:", aiError);
-    //     // For simple KYC, we might not even populate this if AI is fully removed.
-    //     // If we want to log the failure but proceed with manual review:
-    //     // riskAssessment = {
-    //     //     riskLevel: "unknown",
-    //     //     fraudScore: -1,
-    //     //     identityVerified: false,
-    //     //     flags: ["AI assessment failed: " + (aiError.message || "Unknown AI error")],
-    //     // };
-    // }
     
     const kycDocRef = doc(db, "kycData", userId);
     const userDocRef = doc(db, "users", userId);
@@ -79,9 +52,9 @@ export async function submitKycAction(
       governmentId,
       photoUrl: "placeholder_for_actual_storage_url", 
       photoFileName: photoFile.name,
-      status: "pending_review", // All submissions go to pending_review
+      status: "pending_review", 
       submittedAt: new Date(),
-      riskAssessment: undefined, // No AI risk assessment for simple KYC
+      // riskAssessment field removed
     };
     
     await setDoc(kycDocRef, newKycData, { merge: true });
@@ -210,7 +183,7 @@ export async function recordTransferAction(
         recipientDetails.country = transferData.country;
       }
       
-      const authDetailsToSave: Partial<AuthorizationDetails> = { // Ensure it's partial to allow conditional assignment
+      const authDetailsToSave: Partial<AuthorizationDetails> = { 
         cot: parseFloat(cotAmount.toFixed(2)), 
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
@@ -534,3 +507,4 @@ export async function submitSupportTicketAction(
     };
   }
 }
+

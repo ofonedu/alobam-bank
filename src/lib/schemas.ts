@@ -40,20 +40,8 @@ const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/web
 
 export const KYCFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
-  dateOfBirth: z.coerce.date({
-    required_error: "Date of birth is required.",
-    invalid_type_error: "Invalid date. Please use the calendar or enter in a recognizable format (e.g., YYYY-MM-DD, MM/DD/YYYY).",
-  })
-  .refine((date) => !isNaN(date.getTime()), {
-    // This message is shown if coerce.date results in an "Invalid Date" object
-    message: "The entered date is invalid. Please check the year, month, and day (e.g., ensure February doesn't have 30 days).",
-  })
-  .transform(date => {
-    // At this point, date is a valid Date object.
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+    message: "Date of birth must be in YYYY-MM-DD format.",
   }),
   address: z.string().min(5, { message: "Address must be at least 5 characters." }),
   governmentId: z.string().min(5, { message: "Government ID must be at least 5 characters." }),
