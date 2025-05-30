@@ -1,14 +1,12 @@
-
 // src/lib/actions/admin-actions.ts
 "use server";
 
-import { db } from "@/lib/firebase";
-import type { UserProfile, Loan, Transaction as TransactionType, KYCData, DashboardNavItem } from "@/types";
+import { db, auth as firebaseAuth } from "@/lib/firebase"; 
+import type { UserProfile, Loan, Transaction as TransactionType, KYCData, AdminAddUserFormData } from "@/types";
 import {
   doc,
   updateDoc,
   collection,
-  getDocs,
   Timestamp,
   runTransaction,
   addDoc,
@@ -16,13 +14,14 @@ import {
   getDoc,
   query,
   where,
-  getCountFromServer
+  getCountFromServer,
+  setDoc,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { sendTransactionalEmail } from "../email-service";
-import { AdminAddUserSchema, type AdminAddUserFormData } from "../schemas";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { AdminAddUserSchema } from "../schemas";
+import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { getRandomName } from "../utils";
 
 
 // --- Dashboard Stats ---
@@ -88,30 +87,30 @@ export async function updateLoanStatusAction(
 
     await updateDoc(loanDocRef, updateData);
 
-    const loanDocSnap = await getDoc(loanDocRef); // Fetch after update to get latest data for email
+    const loanDocSnap = await getDoc(loanDocRef);
     const loanData = loanDocSnap.data() as Loan | undefined;
 
-    if (newStatus === "approved") {
+    if (newStatus === "approved" && loanData) {
       await sendTransactionalEmail({
         userId,
         emailType: "LOAN_APPROVED",
         data: {
           loanId,
-          loanAmount: loanData?.amount,
-          currency: "USD", // Assuming USD, adjust if loans have currency
+          loanAmount: loanData.amount,
+          currency: loanData.currency || "USD", 
           approvalDate: updateData.approvalDate ? new Date(updateData.approvalDate).toLocaleDateString() : "N/A",
         },
       });
-    } else if (newStatus === "rejected") {
+    } else if (newStatus === "rejected" && loanData) {
        await sendTransactionalEmail({
         userId,
         emailType: "LOAN_REJECTED",
         data: {
           loanId,
-          loanAmount: loanData?.amount,
-          currency: "USD", // Assuming USD
-          rejectionDate: new Date().toLocaleDateString(), // Current date for rejection
-          reason: "Application did not meet criteria.", // Placeholder reason
+          loanAmount: loanData.amount,
+          currency: loanData.currency || "USD", 
+          rejectionDate: new Date().toLocaleDateString(), 
+          reason: "Application did not meet criteria.", 
         },
       });
     }
@@ -178,7 +177,7 @@ export async function issueManualAdjustmentAction(
 
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
-    const transactionTypeForRecord: TransactionType['type'] = type; // 'credit' or 'debit'
+    const transactionTypeForRecord: TransactionType['type'] = type;
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
@@ -207,28 +206,26 @@ export async function issueManualAdjustmentAction(
         type: transactionTypeForRecord,
         status: "completed",
         currency: userProfileData.currency || "USD", 
-        notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. User: ${userProfileData.displayName || targetUserId}. Original input reason: ${description}`
+        notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. Original input reason: ${description}`
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData); 
       return { transactionId: transactionDocRef.id, newBalance, userCurrency: userProfileData.currency || "USD" }; 
     });
     
-    // Send email notification after transaction is committed
-    const emailType = type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
     await sendTransactionalEmail({
       userId: targetUserId,
-      emailType,
+      emailType: type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION",
       data: {
         accountNumber: userProfileData?.accountNumber,
-        amount: amount, // original positive amount
+        amount: amount,
         currency: transactionResult.userCurrency,
         description: description,
         transactionId: transactionResult.transactionId,
         currentBalance: transactionResult.newBalance,
-        availableBalance: transactionResult.newBalance, // Assuming same for this context
+        availableBalance: transactionResult.newBalance, 
         valueDate: new Date().toLocaleDateString(),
         time: new Date().toLocaleTimeString(),
-        location: "Platform Adjustment",
+        location: "Platform Adjustment", // Could be more specific if admin actions are logged with location
         remarks: description,
       },
     });
@@ -255,36 +252,10 @@ export async function issueManualAdjustmentAction(
   }
 }
 
-
-const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica", "James", "Linda", "Robert", "Patricia"];
-const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson", "Garcia", "Rodriguez"];
-const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien", "Raj", "Priya"];
-const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh", "Gupta", "Khan"];
-const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna", "Viktor", "Elena"];
-const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov", "Kowalski", "Andersson"];
-const companySuffixes = ["Solutions", "Group", "Enterprises", "Corp", "Ltd.", "Inc.", "Global", "Tech", "Ventures", "Industries"];
-const companyRegions = ["Global", "Atlantic", "Pacific", "Euro", "Asia", "Ameri", "International", "Continental"];
-const transactionActions = ["Payment to", "Received from", "Invoice for", "Services by", "Consulting for", "Purchase from", "Refund from", "Subscription to", "Transfer to", "Credit from", "Market adjustment by"];
-
+const companySuffixes = ["Solutions", "Group", "Enterprises", "Corp", "Ltd.", "Inc.", "Global", "Tech", "Ventures", "Industries", "Systems", "Logistics", "Holdings", "Partners", "Dynamics"];
+const companyRegions = ["Global", "Atlantic", "Pacific", "Euro", "Asia", "Ameri", "International", "Continental", "Northern", "Southern", "Western", "Eastern", "Cyber", "Nova", "Quantum"];
+const transactionActions = ["Payment to", "Received from", "Invoice for", "Services by", "Consulting for", "Purchase from", "Refund from", "Subscription to", "Transfer to", "Credit from", "Market adjustment by", "Processing fee for", "Logistics for", "Development of", "Marketing for"];
 const getRandomElement = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-
-export function getRandomName(): string {
-    const regionChoice = Math.random();
-    let firstNames, lastNames;
-    if (regionChoice < 0.33) { // American
-        firstNames = americanFirstNames;
-        lastNames = americanLastNames;
-    } else if (regionChoice < 0.66) { // Asian
-        firstNames = asianFirstNames;
-        lastNames = asianLastNames;
-    } else { // European
-        firstNames = europeanFirstNames;
-        lastNames = europeanLastNames;
-    }
-    const randomFirstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const randomLastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    return `${randomFirstName} ${randomLastName}`;
-};
 
 
 interface GenerateRandomTransactionsResult {
@@ -338,22 +309,22 @@ export async function generateRandomTransactionsAction(
             idealAmountPerTx = (targetNetValue - totalAmountForCompleted) / remainingTransactions;
         }
         
-        const randomFactor = (Math.random() * 0.6) + 0.7; // Random factor between 0.7 and 1.3
+        const randomFactor = (Math.random() * 0.6) + 0.7; 
         amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
         
-        if (i === count - 1) { // Last transaction, adjust to hit target precisely
+        if (i === count - 1) { 
             amount = parseFloat((targetNetValue - totalAmountForCompleted).toFixed(2));
         }
         
-        // Clamp amount to avoid extreme values but still allow for variety
         const maxReasonableTxAmount = targetNetValue === 0 ? 500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * 1.5;
         const minReasonableTxAmount = targetNetValue === 0 ? -500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * -1.5;
+
         amount = Math.max(minReasonableTxAmount, Math.min(maxReasonableTxAmount, amount));
-        amount = parseFloat(amount.toFixed(2)); // Ensure two decimal places
-        if (amount === 0 && targetNetValue !== 0 && count > 1 && i < count -1 ) { // Avoid zero transactions unless it's the target or last item
+        amount = parseFloat(amount.toFixed(2)); 
+
+        if (amount === 0 && targetNetValue !== 0 && count > 1 && i < count -1 ) { 
             amount = parseFloat(((Math.random() < 0.5 ? 1 : -1) * (Math.random() * 50 + 5)).toFixed(2));
         }
-
       } else {
         amount = (Math.random() * 495 + 5) * (Math.random() < 0.55 ? 1 : -1); 
         amount = parseFloat(amount.toFixed(2));
@@ -370,23 +341,23 @@ export async function generateRandomTransactionsAction(
       if (isCompany) {
         counterpartName = `${getRandomElement(companyRegions)} ${getRandomElement(companySuffixes)}`;
       } else {
-        counterpartName = getRandomName(); // Uses the new global getRandomName
+        counterpartName = getRandomName();
       }
       
       const description = `${getRandomElement(transactionActions)} ${counterpartName}`;
       
       let status: TransactionType['status'];
       const statusRoll = Math.random() * 100;
-      if (statusRoll < 95) { 
+      if (statusRoll < 95) { // 95% completed
         status = "completed";
-      } else if (statusRoll < 98) { 
+      } else if (statusRoll < 98) { // 3% pending (95 to 97.99)
         status = "pending";
-      } else { 
+      } else { // 2% failed (98 to 99.99)
         status = "failed";
       }
 
       const transactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
-        userId: targetUserId, // Ensure this is set correctly
+        userId: targetUserId, 
         date: Timestamp.fromDate(randomDate),
         description: description,
         amount: amount,
@@ -481,20 +452,20 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
     const kycUpdate: Partial<KYCData> = {
       status: "verified",
       reviewedAt: new Date(), 
-      reviewedBy: adminId || "system", 
+      reviewedBy: adminId || "system_admin_placeholder", 
       rejectionReason: "" 
     };
     const userProfileUpdate: Partial<UserProfile> = { kycStatus: "verified" };
 
-    const batch = writeBatch(db);
-    batch.update(kycDocRef, kycUpdate);
-    batch.update(userDocRef, userProfileUpdate);
-    await batch.commit();
+    const firestoreBatch = writeBatch(db); 
+    firestoreBatch.update(kycDocRef, kycUpdate);
+    firestoreBatch.update(userDocRef, userProfileUpdate);
+    await firestoreBatch.commit();
     
     await sendTransactionalEmail({
       userId,
       emailType: "KYC_APPROVED", 
-      data: { /* Add any specific data KYC_APPROVED template might need */ },
+      data: {  },
     });
 
     revalidatePath("/admin/kyc");
@@ -519,14 +490,14 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
       status: "rejected",
       rejectionReason,
       reviewedAt: new Date(), 
-      reviewedBy: adminId || "system", 
+      reviewedBy: adminId || "system_admin_placeholder", 
     };
     const userProfileUpdate: Partial<UserProfile> = { kycStatus: "rejected" };
 
-    const batch = writeBatch(db);
-    batch.update(kycDocRef, kycUpdate);
-    batch.update(userDocRef, userProfileUpdate);
-    await batch.commit();
+    const firestoreBatch = writeBatch(db); 
+    firestoreBatch.update(kycDocRef, kycUpdate);
+    firestoreBatch.update(userDocRef, userProfileUpdate);
+    await firestoreBatch.commit();
 
     await sendTransactionalEmail({
       userId,
@@ -627,13 +598,14 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
   }
   const { email, password, firstName, lastName, phoneNumber, accountType, currency, role } = validatedData.data;
 
-  let newAuthUser: any = null;
+  let newAuthUser: any = null; 
   try {
-    // 1. Create Firebase Auth user
-    newAuthUser = await createUserWithEmailAndPassword(auth, email, password);
-    const uid = newAuthUser.user.uid;
+    console.log("adminAddUserAction: Attempting to create Firebase Auth user for:", email);
+    const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, password); 
+    newAuthUser = userCredential.user;
+    const uid = newAuthUser.uid;
+    console.log("adminAddUserAction: Firebase Auth user created successfully. UID:", uid);
 
-    // 2. Create Firestore user profile document
     const userDocRef = doc(db, "users", uid);
     const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
     const initialBalance = 0;
@@ -660,15 +632,14 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     };
 
     await setDoc(userDocRef, newUserProfileData);
-
-    // 3. Send Welcome Email (optional, but good practice)
+    console.log("adminAddUserAction: Firestore profile created successfully for UID:", uid);
+    
     await sendTransactionalEmail({
       userId: uid,
       emailType: "WELCOME_EMAIL",
       data: {
-        loginLink: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9002"}/login`, // Use env variable
+        loginLink: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9002"}/login`, 
         accountNumber: newAccountNumber,
-        // email-service will fetch fullName and toEmail using userId
       },
     });
     
@@ -677,18 +648,20 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
 
   } catch (error: any) {
     console.error("Error in adminAddUserAction:", error);
-    // If Firebase Auth user was created but Firestore profile failed, attempt to delete Auth user
-    if (newAuthUser && newAuthUser.user && newAuthUser.user.delete) {
+    if (newAuthUser && newAuthUser.delete) { 
       try {
-        await newAuthUser.user.delete();
+        await deleteUser(newAuthUser); 
         console.warn("AdminAddUserAction: Rolled back Firebase Auth user due to Firestore error.");
       } catch (deleteError) {
         console.error("AdminAddUserAction: CRITICAL - Failed to roll back Firebase Auth user:", deleteError);
       }
     }
-    return { success: false, message: error.message || "Failed to create user.", error: error.message };
+    let errorMessage = "Failed to create user.";
+    if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email is already registered.";
+    } else if (error.message) {
+        errorMessage = error.message;
+    }
+    return { success: false, message: errorMessage, error: error.message };
   }
 }
-
-
-    

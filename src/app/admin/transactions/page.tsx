@@ -3,18 +3,20 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Filter, Flag, Eye, ShieldCheck, Loader2, AlertTriangle, Globe, CheckSquare } from "lucide-react";
+import { Search, Flag, Eye, ShieldCheck, Loader2, AlertTriangle, CheckSquare } from "lucide-react"; 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { AdminTransactionView } from "@/types";
-import { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, Timestamp, query, orderBy } from "firebase/firestore";
+import type { AdminTransactionView, UserProfile } from "@/types"; 
+import { useState, useEffect, useMemo, Suspense } from 'react'; 
+import { collection, getDocs, Timestamp, query, orderBy, where, doc, getDoc } from "firebase/firestore"; 
 import { db } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ViewTransactionDetailModal } from "./components/ViewTransactionDetailModal";
 import { cn } from "@/lib/utils";
 import { markTransactionAsCompletedAction } from "@/lib/actions/admin-actions";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from 'next/navigation'; 
+import { getRandomName } from "@/lib/utils"; 
 
 
 const TransactionStatusBadge = ({ status }: { status: AdminTransactionView["status"] }) => {
@@ -62,82 +64,93 @@ const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
     return date.toLocaleString();
   };
 
-const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica", "James", "Linda", "Robert", "Patricia"];
-const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson", "Garcia", "Rodriguez"];
-const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien", "Raj", "Priya"];
-const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh", "Gupta", "Khan"];
-const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna", "Viktor", "Elena"];
-const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov", "Kowalski", "Andersson"];
-
-const getRandomName = () => {
-    const regionChoice = Math.random();
-    let firstNames, lastNames;
-    if (regionChoice < 0.33) { // American
-        firstNames = americanFirstNames;
-        lastNames = americanLastNames;
-    } else if (regionChoice < 0.66) { // Asian
-        firstNames = asianFirstNames;
-        lastNames = asianLastNames;
-    } else { // European
-        firstNames = europeanFirstNames;
-        lastNames = europeanLastNames;
-    }
-    const randomFirstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const randomLastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    return `${randomFirstName} ${randomLastName}`;
-};
-
-
-export default function AdminTransactionsPage() {
+function TransactionsContent() {
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<AdminTransactionView[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterFlagged, setFilterFlagged] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pageTitle, setPageTitle] = useState("All Transactions");
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTransactionForDetail, setSelectedTransactionForDetail] = useState<AdminTransactionView | null>(null);
   const [completingTransactionId, setCompletingTransactionId] = useState<string | null>(null);
 
-  const displayedUserNames = useMemo(() => new Map<string, string>(), []);
-
+  const searchParams = useSearchParams();
+  const filterByUserId = searchParams.get('userId');
 
   const fetchTransactions = async () => {
     setIsLoading(true);
     setError(null);
-    // displayedUserNames.clear(); // Don't clear if we want names to be semi-persistent per session
     try {
       const transactionsCollectionRef = collection(db, "transactions");
-      const q = query(transactionsCollectionRef, orderBy("date", "desc"));
+      const queryConstraints = [orderBy("date", "desc")];
+
+      let userDisplayNameMap = new Map<string, string>();
+      let userEmailMap = new Map<string, string>();
+
+
+      if (filterByUserId) {
+        queryConstraints.unshift(where("userId", "==", filterByUserId));
+        try {
+            const userDocRef = doc(db, "users", filterByUserId);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as UserProfile;
+                const nameToDisplay = userData.displayName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || getRandomName();
+                setPageTitle(`Transactions for ${nameToDisplay}`);
+                userDisplayNameMap.set(filterByUserId, nameToDisplay);
+                if(userData.email) userEmailMap.set(filterByUserId, userData.email);
+            } else {
+                setPageTitle(`Transactions for User ID: ${filterByUserId}`);
+                 userDisplayNameMap.set(filterByUserId, getRandomName()); // Assign random if user not found
+            }
+        } catch (e) {
+            console.error("Failed to fetch user details for page title:", e);
+            setPageTitle(`Transactions for User ID: ${filterByUserId}`);
+            userDisplayNameMap.set(filterByUserId, getRandomName());
+        }
+      } else {
+        setPageTitle("All Transactions");
+        // Fetch all users to build a map if not filtering by a single user
+        const usersCollectionRef = collection(db, "users");
+        const usersSnapshot = await getDocs(usersCollectionRef);
+        usersSnapshot.forEach(userDoc => {
+            const userData = userDoc.data() as UserProfile;
+            userDisplayNameMap.set(userDoc.id, userData.displayName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || getRandomName());
+            if(userData.email) userEmailMap.set(userDoc.id, userData.email);
+        });
+      }
+      
+      const q = query(transactionsCollectionRef, ...queryConstraints);
       const querySnapshot = await getDocs(q);
-      const fetchedTransactions: AdminTransactionView[] = querySnapshot.docs.map((doc) => {
-        const data = doc.data();
+      
+      const fetchedTransactions: AdminTransactionView[] = querySnapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
         let transactionDate: Date;
           if (data.date && (data.date as Timestamp).toDate) {
               transactionDate = (data.date as Timestamp).toDate();
           } else if (data.date instanceof Date) {
               transactionDate = data.date;
           } else {
-              transactionDate = new Date(data.date); // Fallback attempt
+              transactionDate = new Date(data.date as string | number); 
           }
         
-        let userNameToDisplay = data.userName;
-        if (!userNameToDisplay) {
-          if (!displayedUserNames.has(data.userId)) {
-              displayedUserNames.set(data.userId, getRandomName());
-          }
-          userNameToDisplay = displayedUserNames.get(data.userId);
-        }
+        const userName = userDisplayNameMap.get(data.userId) || getRandomName();
+        const userEmail = userEmailMap.get(data.userId) || undefined;
 
         return {
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           date: transactionDate,
-          userName: userNameToDisplay, 
+          userName: userName, 
+          userEmail: userEmail,
         } as AdminTransactionView;
       });
+
       setTransactions(fetchedTransactions);
+
     } catch (err: any) {
       console.error("Error fetching transactions:", err);
       setError("Failed to fetch transactions. Please try again.");
@@ -148,7 +161,8 @@ export default function AdminTransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [displayedUserNames]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterByUserId]); 
 
   const handleViewDetails = (transaction: AdminTransactionView) => {
     setSelectedTransactionForDetail(transaction);
@@ -161,7 +175,7 @@ export default function AdminTransactionsPage() {
     const result = await markTransactionAsCompletedAction(transaction.id, transaction.userId, transaction.amount);
     if (result.success) {
       toast({ title: "Success", description: result.message });
-      await fetchTransactions(); // Refresh list
+      await fetchTransactions(); 
     } else {
       toast({ title: "Error", description: result.message || "Failed to mark as completed.", variant: "destructive" });
     }
@@ -173,6 +187,7 @@ export default function AdminTransactionsPage() {
       txn.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       txn.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (txn.userName && txn.userName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (txn.userEmail && txn.userEmail.toLowerCase().includes(searchTerm.toLowerCase())) ||
       txn.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
     const matchesFlag = filterFlagged ? txn.isFlagged : true;
@@ -194,13 +209,13 @@ export default function AdminTransactionsPage() {
       
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>All Transactions ({isLoading ? "Loading..." : filteredTransactions.length})</CardTitle>
-          <CardDescription>View, filter, and manage all transactions. Review actions are placeholders.</CardDescription>
+          <CardTitle>{pageTitle} ({isLoading ? "Loading..." : filteredTransactions.length})</CardTitle>
+          <CardDescription>View, filter, and manage transactions.</CardDescription>
            <div className="pt-4">
              <div className="relative w-full max-w-lg">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search by Txn ID, User, Description..." 
+                  placeholder="Search by Txn ID, User, Email, Description..." 
                   className="pl-10" 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -220,7 +235,7 @@ export default function AdminTransactionsPage() {
               <AlertTitle>Error Loading Transactions</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
-          ) : filteredTransactions.length === 0 && !searchTerm && !filterFlagged ? (
+          ) : filteredTransactions.length === 0 && !searchTerm && !filterFlagged && !filterByUserId ? (
             <p className="text-muted-foreground text-center py-8">No transactions found.</p>
           ) : filteredTransactions.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">No transactions match your current filters.</p>
@@ -245,8 +260,8 @@ export default function AdminTransactionsPage() {
                     <TableRow key={txn.id} className={txn.isFlagged ? "bg-destructive/10 hover:bg-destructive/20" : ""}>
                       <TableCell className="font-mono text-xs">{txn.id}</TableCell>
                       <TableCell>
-                        <div>{txn.userName}</div>
-                        <div className="text-xs text-muted-foreground">{txn.userId}</div>
+                        <div>{txn.userName || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">{txn.userEmail || txn.userId}</div>
                       </TableCell>
                       <TableCell>{formatDateDisplay(txn.date)}</TableCell>
                       <TableCell className="max-w-[200px] truncate" title={txn.description}>{txn.description}</TableCell>
@@ -272,7 +287,7 @@ export default function AdminTransactionsPage() {
                               {completingTransactionId === txn.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckSquare className="h-4 w-4" />}
                             </Button>
                           )}
-                          {txn.isFlagged && <Button variant="ghost" size="icon" title="Mark as Reviewed" disabled><ShieldCheck className="h-4 w-4" /></Button>}
+                          {txn.isFlagged && <Button variant="ghost" size="icon" title="Mark as Reviewed (Action Placeholder)" disabled><ShieldCheck className="h-4 w-4" /></Button>}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -292,4 +307,12 @@ export default function AdminTransactionsPage() {
       )}
     </div>
   );
+}
+
+export default function AdminTransactionsPage() {
+    return (
+        <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /> Loading transactions page...</div>}>
+            <TransactionsContent />
+        </Suspense>
+    )
 }

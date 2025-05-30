@@ -17,6 +17,19 @@ export const RegisterSchema = z.object({
 });
 export type RegisterFormData = z.infer<typeof RegisterSchema>;
 
+export const AdminAddUserSchema = z.object({
+  firstName: z.string().min(2, "First name must be at least 2 characters."),
+  lastName: z.string().min(2, "Last name must be at least 2 characters."),
+  email: z.string().email({ message: "Invalid email address." }),
+  password: z.string().min(8, "Password must be at least 8 characters."),
+  phoneNumber: z.string().min(10, "Phone number seems too short.").optional().or(z.literal('')),
+  accountType: z.string().min(1, "Account type is required."),
+  currency: z.string().min(3, "Currency code is required.").default("USD"),
+  role: z.enum(["user", "admin"], { required_error: "Role is required." }),
+});
+export type AdminAddUserFormData = z.infer<typeof AdminAddUserSchema>;
+
+
 export const EditProfileSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters."),
   lastName: z.string().min(2, "Last name must be at least 2 characters."),
@@ -88,9 +101,9 @@ export const InternationalTransferSchema = z.object({
   recipientName: z.string().min(2, "Recipient name must be at least 2 characters."),
   recipientAccountNumberIBAN: z.string().min(15, "Account number/IBAN seems too short.").max(34, "Account number/IBAN seems too long."),
   bankName: z.string().min(3, "Bank name must be at least 3 characters."),
-  swiftBic: z.string().regex(/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/, "Invalid SWIFT/BIC code format."),
+  swiftBic: z.string().regex(/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/, "Invalid SWIFT/BIC code format.").optional().or(z.literal('')),
   recipientBankAddress: z.string().min(5, "Bank address is too short.").optional(),
-  country: z.string().min(2, "Country selection is required."),
+  country: z.string().min(2, "Country selection is required.").optional().or(z.literal('')),
   amount: z.coerce.number().positive({ message: "Amount must be positive." }),
   currency: z.string().default("USD"),
   remarks: z.string().max(100, "Remarks cannot exceed 100 characters.").optional(),
@@ -252,6 +265,3 @@ export const FooterContentSchema = z.object({
   footerSocialMediaLinks: z.array(SocialMediaLinkSchema).optional(),
 });
 export type FooterContentFormData = z.infer<typeof FooterContentSchema>;
-
-
-    
