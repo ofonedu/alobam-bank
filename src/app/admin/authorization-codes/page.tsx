@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { generateAuthorizationCodeAction, getAuthorizationCodesAction, deleteAuthorizationCodeAction } from "@/lib/actions/admin-code-actions";
 import type { AuthorizationCode as OriginalAuthorizationCode } from "@/types"; 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge"; // Added import
 
 interface ClientAuthorizationCode extends Omit<OriginalAuthorizationCode, 'createdAt' | 'expiresAt'> {
     createdAt: Date;
@@ -238,3 +239,4 @@ export default function AuthorizationCodesPage() {
     </div>
   );
 }
+
