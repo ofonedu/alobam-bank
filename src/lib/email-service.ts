@@ -1,205 +1,137 @@
-
 // src/lib/email-service.ts
 "use server";
 
-import type { UserProfile } from "@/types";
+import type { UserProfile, EmailType, NotificationData } from "@/types";
 import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, Timestamp } from "firebase/firestore";
 
-export type EmailType =
-  | "WELCOME_EMAIL"
-  | "TRANSFER_SUCCESS"
-  | "TRANSFER_FAILED"
-  | "LOAN_APPROVED"
-  | "LOAN_REJECTED"
-  | "MANUAL_DEBIT_NOTIFICATION"
-  | "MANUAL_CREDIT_NOTIFICATION"
-  | "SUPPORT_REPLY" // Placeholder, not yet fully triggered
-  | "SUSPICIOUS_TRANSACTION_FLAGGED" // Placeholder, not yet fully triggered
-  | "KYC_APPROVED"
-  | "KYC_REJECTED";
-
-interface EmailDetails {
-  recipientEmail: string;
-  emailType: EmailType;
-  data: Record<string, any>; // e.g., { firstName: "John", appName: "Wohana Funds" }
+interface EmailServiceDataPayload {
+  toEmail?: string; // Allow overriding fetched email
+  fullName?: string; // Allow overriding fetched name
+  firstName?: string; // Allow overriding fetched name
+  [key: string]: any; // For other dynamic data like amount, reason, link, etc.
 }
 
-// Simple placeholder replacement for hardcoded strings
-function renderTemplate(templateString: string, data: Record<string, any>): string {
-  let rendered = templateString;
-  for (const key in data) {
-    const regex = new RegExp(`{{${key}}}`, "g");
-    rendered = rendered.replace(regex, String(data[key] ?? '')); // Ensure data is stringified, fallback for undefined
-  }
-  return rendered;
+interface EmailServiceResult {
+  success: boolean;
+  message: string;
+  notificationId?: string;
+  error?: string;
 }
 
-export async function sendTransactionalEmail({
-  recipientEmail,
-  emailType,
-  data,
-}: EmailDetails): Promise<{ success: boolean; message: string }> {
-  if (!recipientEmail) {
-    console.warn("EmailService: No recipient email provided for type:", emailType);
-    return { success: false, message: "No recipient email." };
-  }
-
-  let subject = `Notification from ${data.appName || 'Wohana Funds'}`;
-  let body = `This is a notification regarding ${emailType}.\nDetails: ${JSON.stringify(data, null, 2)}`;
-  const appName = data.appName || "Wohana Funds";
-
-  switch (emailType) {
-    case "WELCOME_EMAIL":
-      subject = renderTemplate("Welcome to {{appName}}, {{firstName}}!", {...data, appName});
-      body = renderTemplate(
-`Hi {{firstName}},
-
-Welcome to {{appName}} – your smart business banking platform.
-
-To get started, please complete your KYC verification.
-Access your dashboard here: {{loginLink}}
-
-Need help? Our team is one click away.
-
-Cheers,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    case "TRANSFER_SUCCESS":
-      subject = renderTemplate("Transfer Successful - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-Your transfer of {{currency}} {{amount}} to {{recipientName}} (Transaction ID: {{transactionId}}) was successful.
-Your new approximate balance is {{currency}} {{newBalance}}.
-
-Thank you for banking with {{appName}}.`, {...data, appName}
-      );
-      break;
-    case "TRANSFER_FAILED":
-       subject = renderTemplate("Transfer Failed - {{appName}}", {...data, appName});
-       body = renderTemplate(
-`Hi {{userName}},
-
-Unfortunately, your transfer of {{currency}} {{amount}} to {{recipientName}} could not be processed.
-Reason: {{reason}}
-
-Please contact support if you need further assistance.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-       );
-      break;
-    case "LOAN_APPROVED":
-      subject = renderTemplate("Loan Application Approved - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-Great news! Your loan application (ID: {{loanId}}) for {{currency}} {{loanAmount}} has been approved on {{approvalDate}}.
-Funds will be disbursed shortly.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    case "LOAN_REJECTED":
-      subject = renderTemplate("Loan Application Update - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-We regret to inform you that your loan application (ID: {{loanId}}) for {{currency}} {{loanAmount}} was not approved at this time.
-If you have questions, please contact our support team.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    case "MANUAL_DEBIT_NOTIFICATION":
-      subject = renderTemplate("Account Debit Notification - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-This email confirms a manual debit of {{currency}} {{amount}} from your account.
-Reason: {{description}}
-Transaction ID: {{transactionId}}
-Your new balance is approximately: {{currency}} {{newBalance}}.
-
-If you have any questions, please contact support.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    case "MANUAL_CREDIT_NOTIFICATION":
-       subject = renderTemplate("Account Credit Notification - {{appName}}", {...data, appName});
-       body = renderTemplate(
-`Hi {{userName}},
-
-This email confirms a manual credit of {{currency}} {{amount}} to your account.
-Reason: {{description}}
-Transaction ID: {{transactionId}}
-Your new balance is approximately: {{currency}} {{newBalance}}.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-       );
-      break;
-    case "KYC_APPROVED":
-      subject = renderTemplate("KYC Verification Successful - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-Congratulations! Your KYC verification has been successfully approved.
-You now have full access to all features on {{appName}}.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    case "KYC_REJECTED":
-      subject = renderTemplate("KYC Verification Update - {{appName}}", {...data, appName});
-      body = renderTemplate(
-`Hi {{userName}},
-
-There was an issue with your recent KYC submission for {{appName}}.
-Reason: {{rejectionReason}}
-
-Please log in to your dashboard to review the details and resubmit if necessary, or contact support for assistance.
-
-Regards,
-The {{appName}} Team`, {...data, appName}
-      );
-      break;
-    // Add more cases for other EmailTypes like SUPPORT_REPLY, SUSPICIOUS_TRANSACTION_FLAGGED
-    // For now, they'll use the default generic message
-  }
-
-  console.log("--- Sending Transactional Email (Mock - Hardcoded Templates) ---");
-  console.log("Recipient:", recipientEmail);
-  console.log("Email Type:", emailType);
-  console.log("Subject:", subject);
-  console.log("Body:\n", body);
-  console.log("-----------------------------------------------------------------");
-
-  return { success: true, message: "Email processed by mock service using hardcoded templates." };
-}
-
-export async function getUserEmail(userId: string, firestoreDb: any): Promise<string | null> {
-    if (!userId) return null;
-    try {
-        const userDocRef = doc(firestoreDb, "users", userId);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-            const userData = userDocSnap.data() as UserProfile;
-            return userData.email;
-        }
-        console.warn(`EmailService (getUserEmail): User document not found for UID: ${userId}`);
-        return null;
-    } catch (error) {
-        console.error(`EmailService (getUserEmail): Error fetching user email for UID ${userId}:`, error);
-        return null;
+async function getUserDetails(userId: string): Promise<{ email: string | null; fullName: string | null; firstName: string | null; accountNumber: string | null }> {
+  if (!userId) return { email: null, fullName: null, firstName: null, accountNumber: null };
+  try {
+    const userDocRef = doc(db, "users", userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      const userData = userDocSnap.data() as UserProfile;
+      return {
+        email: userData.email,
+        fullName: userData.displayName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || null,
+        firstName: userData.firstName || null,
+        accountNumber: userData.accountNumber || null,
+      };
     }
+    console.warn(`EmailService (getUserDetails): User document not found for UID: ${userId}`);
+    return { email: null, fullName: null, firstName: null, accountNumber: null };
+  } catch (error) {
+    console.error(`EmailService (getUserDetails): Error fetching user details for UID ${userId}:`, error);
+    return { email: null, fullName: null, firstName: null, accountNumber: null };
+  }
 }
 
-    
+export async function sendTransactionalEmail(
+  // userId is optional if toEmail is provided directly in data
+  // but highly recommended for fetching other user-specific details for templates
+  {
+    userId,
+    emailType,
+    data,
+    toEmailOverride,
+  }: {
+    userId?: string;
+    emailType: EmailType;
+    data: EmailServiceDataPayload;
+    toEmailOverride?: string; // Explicitly pass if userId is not available or to override
+  }
+): Promise<EmailServiceResult> {
+  console.log(`EmailService: Attempting to queue email. Type: ${emailType}, UserID: ${userId || 'N/A'}, Data:`, JSON.stringify(data));
+
+  let userDetails: { email: string | null; fullName: string | null; firstName: string | null; accountNumber: string | null } = {
+    email: null,
+    fullName: null,
+    firstName: null,
+    accountNumber: null,
+  };
+
+  if (userId) {
+    userDetails = await getUserDetails(userId);
+  }
+
+  const finalToEmail = toEmailOverride || data.toEmail || userDetails.email;
+  const finalFullName = data.fullName || userDetails.fullName || "Valued User";
+  const finalFirstName = data.firstName || userDetails.firstName || "User";
+  const finalAccountNumber = data.accountNumber || userDetails.accountNumber;
+
+  console.log(`EmailService: Determined recipient: ${finalToEmail}, Name: ${finalFullName}`);
+
+  if (!finalToEmail) {
+    console.error(`EmailService: Critical error - No recipient email address determined for email type ${emailType}, UserID: ${userId}. Cannot queue notification.`);
+    return {
+      success: false,
+      message: "Failed to queue notification: Recipient email address is missing.",
+      error: "Recipient email address could not be determined.",
+    };
+  }
+
+  const bankName = process.env.FROM_NAME || "Wohana Funds";
+  const logoUrl = data.logoUrl || `https://placehold.co/150x50.png?text=${encodeURIComponent(bankName)}`;
+
+  const notificationDoc: Omit<NotificationData, "id"> = {
+    type: emailType,
+    toEmail: finalToEmail,
+    fullName: finalFullName,
+    firstName: finalFirstName,
+    accountNumber: finalAccountNumber,
+    status: "pending",
+    createdAt: Timestamp.now(),
+    bankName: bankName,
+    logoUrl: logoUrl,
+    // Spread other data payload which might contain amount, description, reason etc.
+    ...data,
+  };
+
+  // Remove undefined properties from data before spreading to avoid Firestore issues
+  // although Firestore addDoc/setDoc usually handles undefined by omitting fields.
+  // This is an extra precaution or for clarity.
+  Object.keys(notificationDoc).forEach(key => {
+    if (notificationDoc[key as keyof typeof notificationDoc] === undefined) {
+      delete notificationDoc[key as keyof typeof notificationDoc];
+    }
+  });
+
+
+  console.log("EmailService: Notification document prepared for Firestore:", JSON.stringify(notificationDoc));
+
+  try {
+    const notificationsColRef = collection(db, "notifications");
+    const docRef = await addDoc(notificationsColRef, notificationDoc);
+    console.log(`EmailService: Notification queued successfully to Firestore with ID: ${docRef.id}`);
+    return {
+      success: true,
+      message: `Notification successfully queued for ${emailType}.`,
+      notificationId: docRef.id,
+    };
+  } catch (firestoreError: any) {
+    console.error(`EmailService: CRITICAL ERROR - Failed to write notification to Firestore for type ${emailType} to ${finalToEmail}.`);
+    console.error("Firestore Write Error Details:", firestoreError.message);
+    console.error("Firestore Write Error Code:", firestoreError.code);
+    console.error("Full Firestore Write Error Object:", JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError)));
+    return {
+      success: false,
+      message: "Failed to queue notification to Firestore. Check server logs.",
+      error: `Firestore error: ${firestoreError.message} (Code: ${firestoreError.code || 'N/A'})`,
+    };
+  }
+}
