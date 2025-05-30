@@ -19,7 +19,11 @@ import {
   getCountFromServer
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
-import { sendTransactionalEmail, getUserEmail } from "../email-service";
+import { sendTransactionalEmail } from "../email-service";
+import { AdminAddUserSchema, type AdminAddUserFormData } from "../schemas";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
 
 // --- Dashboard Stats ---
 interface AdminDashboardStats {
@@ -84,33 +88,33 @@ export async function updateLoanStatusAction(
 
     await updateDoc(loanDocRef, updateData);
 
-    const recipientEmail = await getUserEmail(userId, db);
-    if (recipientEmail) {
-      const loanDocSnap = await getDoc(loanDocRef);
-      const loanData = loanDocSnap.data() as Loan | undefined;
+    const loanDocSnap = await getDoc(loanDocRef); // Fetch after update to get latest data for email
+    const loanData = loanDocSnap.data() as Loan | undefined;
 
-      if (newStatus === "approved") {
-        await sendTransactionalEmail({
-          recipientEmail,
-          emailType: "LOAN_APPROVED",
-          data: {
-            loanId,
-            loanAmount: loanData?.amount,
-            approvalDate: updateData.approvalDate ? updateData.approvalDate.toLocaleDateString() : "N/A",
-          },
-        });
-      } else if (newStatus === "rejected") {
-         await sendTransactionalEmail({
-          recipientEmail,
-          emailType: "LOAN_REJECTED",
-          data: {
-            loanId,
-            loanAmount: loanData?.amount,
-          },
-        });
-      }
+    if (newStatus === "approved") {
+      await sendTransactionalEmail({
+        userId,
+        emailType: "LOAN_APPROVED",
+        data: {
+          loanId,
+          loanAmount: loanData?.amount,
+          currency: "USD", // Assuming USD, adjust if loans have currency
+          approvalDate: updateData.approvalDate ? new Date(updateData.approvalDate).toLocaleDateString() : "N/A",
+        },
+      });
+    } else if (newStatus === "rejected") {
+       await sendTransactionalEmail({
+        userId,
+        emailType: "LOAN_REJECTED",
+        data: {
+          loanId,
+          loanAmount: loanData?.amount,
+          currency: "USD", // Assuming USD
+          rejectionDate: new Date().toLocaleDateString(), // Current date for rejection
+          reason: "Application did not meet criteria.", // Placeholder reason
+        },
+      });
     }
-
 
     revalidatePath("/admin/loans");
     revalidatePath(`/dashboard/loans`); 
@@ -170,13 +174,11 @@ export async function issueManualAdjustmentAction(
     return { success: false, message: "Amount must be positive." };
   }
 
-  let userEmail: string | null = null;
-  let userName: string | null = null;
-  let userCurrency: string = "USD"; 
+  let userProfileData: UserProfile | null = null;
 
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
-    const transactionType = type === "credit" ? "credit" : "debit"; 
+    const transactionTypeForRecord: TransactionType['type'] = type; // 'credit' or 'debit'
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
@@ -186,14 +188,9 @@ export async function issueManualAdjustmentAction(
         throw new Error("Target user profile not found.");
       }
       
-      const userProfileData = userDoc.data() as UserProfile;
-      userEmail = userProfileData.email; 
-      userName = userProfileData.displayName || null;
-      userCurrency = userProfileData.currency || "USD"; 
-
-
+      userProfileData = userDoc.data() as UserProfile;
       const currentBalance = userProfileData.balance;
-      const newBalance = currentBalance + adjustmentAmount;
+      const newBalance = parseFloat((currentBalance + adjustmentAmount).toFixed(2));
 
       if (newBalance < 0 && type === 'debit') {
         console.warn(`User ${targetUserId} balance will be negative after this debit.`);
@@ -207,43 +204,34 @@ export async function issueManualAdjustmentAction(
         date: Timestamp.now(),
         description: description, 
         amount: adjustmentAmount,
-        type: transactionType,
+        type: transactionTypeForRecord,
         status: "completed",
-        currency: userCurrency, 
-        notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. User: ${userName || targetUserId}. Original input reason: ${description}`
+        currency: userProfileData.currency || "USD", 
+        notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. User: ${userProfileData.displayName || targetUserId}. Original input reason: ${description}`
       };
       const transactionDocRef = await addDoc(transactionsColRef, newTransactionData); 
-      return { transactionId: transactionDocRef.id, newBalance }; 
+      return { transactionId: transactionDocRef.id, newBalance, userCurrency: userProfileData.currency || "USD" }; 
     });
     
-    if (type === "debit" && userEmail) {
-      await sendTransactionalEmail({
-        recipientEmail: userEmail,
-        emailType: "MANUAL_DEBIT_NOTIFICATION",
-        data: {
-          userName: userName || 'Valued Customer',
-          amount: amount.toFixed(2),
-          currency: userCurrency,
-          description,
-          transactionId: transactionResult.transactionId,
-          newBalance: transactionResult.newBalance.toFixed(2),
-        },
-      });
-    }
-     if (type === "credit" && userEmail) {
-      await sendTransactionalEmail({
-        recipientEmail: userEmail,
-        emailType: "MANUAL_CREDIT_NOTIFICATION",
-        data: {
-          userName: userName || 'Valued Customer',
-          amount: amount.toFixed(2),
-          currency: userCurrency,
-          description,
-          transactionId: transactionResult.transactionId,
-          newBalance: transactionResult.newBalance.toFixed(2),
-        },
-      });
-    }
+    // Send email notification after transaction is committed
+    const emailType = type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
+    await sendTransactionalEmail({
+      userId: targetUserId,
+      emailType,
+      data: {
+        accountNumber: userProfileData?.accountNumber,
+        amount: amount, // original positive amount
+        currency: transactionResult.userCurrency,
+        description: description,
+        transactionId: transactionResult.transactionId,
+        currentBalance: transactionResult.newBalance,
+        availableBalance: transactionResult.newBalance, // Assuming same for this context
+        valueDate: new Date().toLocaleDateString(),
+        time: new Date().toLocaleTimeString(),
+        location: "Platform Adjustment",
+        remarks: description,
+      },
+    });
 
     revalidatePath("/admin/financial-ops");
     revalidatePath("/admin/transactions"); 
@@ -253,7 +241,7 @@ export async function issueManualAdjustmentAction(
 
     return {
       success: true,
-      message: `Manual ${type} of ${userCurrency} ${amount.toFixed(2)} for user ${userName || targetUserId} processed. New balance: ${userCurrency} ${transactionResult.newBalance.toFixed(2)}.`,
+      message: `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${userProfileData?.displayName || targetUserId} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`,
       transactionId: transactionResult.transactionId,
     };
 
@@ -267,19 +255,36 @@ export async function issueManualAdjustmentAction(
   }
 }
 
-// Helper function for random selection from an array
+
+const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica", "James", "Linda", "Robert", "Patricia"];
+const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson", "Garcia", "Rodriguez"];
+const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien", "Raj", "Priya"];
+const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh", "Gupta", "Khan"];
+const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna", "Viktor", "Elena"];
+const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov", "Kowalski", "Andersson"];
+const companySuffixes = ["Solutions", "Group", "Enterprises", "Corp", "Ltd.", "Inc.", "Global", "Tech", "Ventures", "Industries"];
+const companyRegions = ["Global", "Atlantic", "Pacific", "Euro", "Asia", "Ameri", "International", "Continental"];
+const transactionActions = ["Payment to", "Received from", "Invoice for", "Services by", "Consulting for", "Purchase from", "Refund from", "Subscription to", "Transfer to", "Credit from", "Market adjustment by"];
+
 const getRandomElement = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-// Sample names and company details
-const americanFirstNames = ["John", "Jane", "Michael", "Emily", "David", "Sarah", "Chris", "Jessica"];
-const americanLastNames = ["Smith", "Doe", "Johnson", "Williams", "Brown", "Davis", "Miller", "Wilson"];
-const asianFirstNames = ["Kenji", "Sakura", "Wei", "Mei", "Hiroshi", "Yuki", "Jin", "Lien"];
-const asianLastNames = ["Tanaka", "Kim", "Lee", "Chen", "Watanabe", "Park", "Nguyen", "Singh"];
-const europeanFirstNames = ["Hans", "Sophie", "Luca", "Isabelle", "Miguel", "Clara", "Pierre", "Anna"];
-const europeanLastNames = ["Müller", "Dubois", "Rossi", "García", "Silva", "Jansen", "Novak", "Ivanov"];
-const companySuffixes = ["Solutions", "Group", "Enterprises", "Corp", "Ltd.", "Inc.", "Global", "Tech"];
-const companyRegions = ["Global", "Atlantic", "Pacific", "Euro", "Asia", "Ameri"];
-const transactionActions = ["Payment to", "Received from", "Invoice for", "Services by", "Consulting for", "Purchase from", "Refund from", "Subscription to"];
+export function getRandomName(): string {
+    const regionChoice = Math.random();
+    let firstNames, lastNames;
+    if (regionChoice < 0.33) { // American
+        firstNames = americanFirstNames;
+        lastNames = americanLastNames;
+    } else if (regionChoice < 0.66) { // Asian
+        firstNames = asianFirstNames;
+        lastNames = asianLastNames;
+    } else { // European
+        firstNames = europeanFirstNames;
+        lastNames = europeanLastNames;
+    }
+    const randomFirstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+    const randomLastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+    return `${randomFirstName} ${randomLastName}`;
+};
 
 
 interface GenerateRandomTransactionsResult {
@@ -321,71 +326,67 @@ export async function generateRandomTransactionsAction(
     for (let i = 0; i < count; i++) {
       const randomDate = new Date();
       randomDate.setDate(randomDate.getDate() - Math.floor(Math.random() * 90)); 
+      randomDate.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60), Math.floor(Math.random() * 60));
 
       let amount;
       let type: TransactionType['type'];
 
-      if (targetNetValue !== undefined) {
+      if (targetNetValue !== undefined && targetNetValue !== null) {
         const remainingTransactions = count - i;
-        // Calculate the average amount needed per remaining transaction to reach the targetNetValue
-        // This needs to consider only future *completed* transactions.
-        // For simplicity in generation, we'll still aim for the overall target and let status sort it out.
-        const idealAmountPerTx = remainingTransactions > 0 ? (targetNetValue - totalAmountForCompleted) / remainingTransactions : 0;
+        let idealAmountPerTx = 0;
+        if (remainingTransactions > 0) {
+            idealAmountPerTx = (targetNetValue - totalAmountForCompleted) / remainingTransactions;
+        }
         
-        const randomFactor = (Math.random() - 0.5) * 0.6 + 1; // e.g., 0.7 to 1.3
+        const randomFactor = (Math.random() * 0.6) + 0.7; // Random factor between 0.7 and 1.3
         amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
         
-        if (i === count - 1 && remainingTransactions === 1) { // Last transaction
+        if (i === count - 1) { // Last transaction, adjust to hit target precisely
             amount = parseFloat((targetNetValue - totalAmountForCompleted).toFixed(2));
         }
         
-        // Clamp amount to avoid extreme values relative to targetNetValue, or use a fixed cap if target is 0
-        const maxIndividualTxAmount = targetNetValue !== 0 ? Math.abs(targetNetValue) / Math.max(1, count / 5) : 500; // Heuristic
-        amount = Math.max(-maxIndividualTxAmount, Math.min(maxIndividualTxAmount, amount));
-        amount = parseFloat(amount.toFixed(2));
-
+        // Clamp amount to avoid extreme values but still allow for variety
+        const maxReasonableTxAmount = targetNetValue === 0 ? 500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * 1.5;
+        const minReasonableTxAmount = targetNetValue === 0 ? -500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * -1.5;
+        amount = Math.max(minReasonableTxAmount, Math.min(maxReasonableTxAmount, amount));
+        amount = parseFloat(amount.toFixed(2)); // Ensure two decimal places
+        if (amount === 0 && targetNetValue !== 0 && count > 1 && i < count -1 ) { // Avoid zero transactions unless it's the target or last item
+            amount = parseFloat(((Math.random() < 0.5 ? 1 : -1) * (Math.random() * 50 + 5)).toFixed(2));
+        }
 
       } else {
-        amount = (Math.random() * 495 + 5) * (Math.random() < 0.55 ? 1 : -1); // Roughly 55% chance of credit
+        amount = (Math.random() * 495 + 5) * (Math.random() < 0.55 ? 1 : -1); 
         amount = parseFloat(amount.toFixed(2));
       }
-
 
       if (amount > 0) {
         type = getRandomElement(["deposit", "credit"]);
       } else {
         type = getRandomElement(["withdrawal", "fee", "debit", "transfer"]);
       }
-
-      // Generate counterpart name/company
+      
       let counterpartName = "";
-      const isCompany = Math.random() < 0.4; // 40% chance of company
-      const regionChoice = getRandomElement(["American", "Asian", "European"]);
-
+      const isCompany = Math.random() < 0.4; 
       if (isCompany) {
         counterpartName = `${getRandomElement(companyRegions)} ${getRandomElement(companySuffixes)}`;
       } else {
-        let fName, lName;
-        if (regionChoice === "American") { fName = getRandomElement(americanFirstNames); lName = getRandomElement(americanLastNames); }
-        else if (regionChoice === "Asian") { fName = getRandomElement(asianFirstNames); lName = getRandomElement(asianLastNames); }
-        else { fName = getRandomElement(europeanFirstNames); lName = getRandomElement(europeanLastNames); }
-        counterpartName = `${fName} ${lName}`;
+        counterpartName = getRandomName(); // Uses the new global getRandomName
       }
       
       const description = `${getRandomElement(transactionActions)} ${counterpartName}`;
       
       let status: TransactionType['status'];
       const statusRoll = Math.random() * 100;
-      if (statusRoll < 95) { // 95% completed
+      if (statusRoll < 95) { 
         status = "completed";
-      } else if (statusRoll < 98) { // 3% pending (95 to 98)
+      } else if (statusRoll < 98) { 
         status = "pending";
-      } else { // 2% failed (98 to 100)
+      } else { 
         status = "failed";
       }
 
       const transactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
-        userId: targetUserId,
+        userId: targetUserId, // Ensure this is set correctly
         date: Timestamp.fromDate(randomDate),
         description: description,
         amount: amount,
@@ -396,18 +397,16 @@ export async function generateRandomTransactionsAction(
       };
       generatedTransactions.push(transactionData);
 
-      if (status === 'completed') { // Only add to balance if completed
+      if (status === 'completed') { 
         totalAmountForCompleted += amount;
       }
     }
     
-    // Add transactions to batch
     generatedTransactions.forEach(txData => {
-        const newTransactionRef = doc(transactionsColRef); 
+        const newTransactionRef = doc(collection(db, "transactions")); 
         batch.set(newTransactionRef, txData);
     });
 
-    // The balance update should reflect the sum of *completed* transactions
     const newBalance = parseFloat((currentBalance + totalAmountForCompleted).toFixed(2));
     batch.update(userDocRef, { balance: newBalance });
 
@@ -492,16 +491,11 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
     batch.update(userDocRef, userProfileUpdate);
     await batch.commit();
     
-    const recipientEmail = await getUserEmail(userId, db);
-    if (recipientEmail) {
-      const userDocSnap = await getDoc(userDocRef);
-      const userData = userDocSnap.data() as UserProfile | undefined;
-      await sendTransactionalEmail({
-        recipientEmail,
-        emailType: "KYC_APPROVED", 
-        data: { userName: userData?.displayName || 'User' },
-      });
-    }
+    await sendTransactionalEmail({
+      userId,
+      emailType: "KYC_APPROVED", 
+      data: { /* Add any specific data KYC_APPROVED template might need */ },
+    });
 
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -534,16 +528,11 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     batch.update(userDocRef, userProfileUpdate);
     await batch.commit();
 
-    const recipientEmail = await getUserEmail(userId, db);
-    if (recipientEmail) {
-      const userDocSnap = await getDoc(userDocRef);
-      const userData = userDocSnap.data() as UserProfile | undefined;
-      await sendTransactionalEmail({
-        recipientEmail,
-        emailType: "KYC_REJECTED", 
-        data: { userName: userData?.displayName || 'User', rejectionReason },
-      });
-    }
+    await sendTransactionalEmail({
+      userId,
+      emailType: "KYC_REJECTED", 
+      data: { reason: rejectionReason },
+    });
 
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -564,7 +553,7 @@ interface TransactionActionResult {
 export async function markTransactionAsCompletedAction(
   transactionId: string,
   userId: string,
-  amount: number // The amount of the transaction being marked as completed
+  amount: number 
 ): Promise<TransactionActionResult> {
   if (!transactionId || !userId) {
     return { success: false, message: "Transaction ID and User ID are required." };
@@ -589,24 +578,23 @@ export async function markTransactionAsCompletedAction(
       if (transactionData.status !== "pending") {
         throw new Error("Only pending transactions can be marked as completed.");
       }
-      // Ensure the amount passed matches the transaction amount for safety
+      
       if (transactionData.amount !== amount) {
           console.warn(`Amount mismatch for transaction ${transactionId}. Passed: ${amount}, Stored: ${transactionData.amount}. Using stored amount for balance update.`);
       }
 
-
       const userProfileData = userDoc.data() as UserProfile;
       const currentBalance = userProfileData.balance;
-      const newBalance = currentBalance + transactionData.amount; // Use the stored amount
+      const newBalance = parseFloat((currentBalance + transactionData.amount).toFixed(2));
 
       firestoreTransaction.update(transactionDocRef, { status: "completed", updatedAt: Timestamp.now() });
       firestoreTransaction.update(userDocRef, { balance: newBalance });
     });
 
     revalidatePath("/admin/transactions");
-    revalidatePath("/admin/users"); // User balance might be displayed here
+    revalidatePath("/admin/users"); 
     revalidatePath(`/dashboard/transactions`); 
-    revalidatePath(`/dashboard`); // User balance is displayed here
+    revalidatePath(`/dashboard`); 
 
     return { success: true, message: `Transaction ${transactionId} marked as completed and balance updated.` };
   } catch (error: any) {
@@ -619,3 +607,88 @@ export async function markTransactionAsCompletedAction(
   }
 }
 
+
+// Admin Add User Action
+interface AdminAddUserResult {
+  success: boolean;
+  message: string;
+  userId?: string;
+  error?: string | Record<string, string[]>;
+}
+
+export async function adminAddUserAction(formData: AdminAddUserFormData): Promise<AdminAddUserResult> {
+  const validatedData = AdminAddUserSchema.safeParse(formData);
+  if (!validatedData.success) {
+    return {
+      success: false,
+      message: "Invalid user data.",
+      error: validatedData.error.flatten().fieldErrors,
+    };
+  }
+  const { email, password, firstName, lastName, phoneNumber, accountType, currency, role } = validatedData.data;
+
+  let newAuthUser: any = null;
+  try {
+    // 1. Create Firebase Auth user
+    newAuthUser = await createUserWithEmailAndPassword(auth, email, password);
+    const uid = newAuthUser.user.uid;
+
+    // 2. Create Firestore user profile document
+    const userDocRef = doc(db, "users", uid);
+    const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+    const initialBalance = 0;
+    const constructedDisplayName = `${firstName} ${lastName}`;
+
+    const newUserProfileData: UserProfile = {
+      uid,
+      email,
+      firstName,
+      lastName,
+      displayName: constructedDisplayName,
+      photoURL: null,
+      phoneNumber: phoneNumber || undefined,
+      accountType: accountType || "default_user_type",
+      currency: currency || "USD",
+      kycStatus: "not_started",
+      role: role || "user",
+      balance: initialBalance,
+      accountNumber: newAccountNumber,
+      isFlagged: false,
+      accountHealthScore: 75,
+      profileCompletionPercentage: 50,
+      isSuspended: false,
+    };
+
+    await setDoc(userDocRef, newUserProfileData);
+
+    // 3. Send Welcome Email (optional, but good practice)
+    await sendTransactionalEmail({
+      userId: uid,
+      emailType: "WELCOME_EMAIL",
+      data: {
+        loginLink: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9002"}/login`, // Use env variable
+        accountNumber: newAccountNumber,
+        // email-service will fetch fullName and toEmail using userId
+      },
+    });
+    
+    revalidatePath("/admin/users");
+    return { success: true, message: "User created successfully.", userId: uid };
+
+  } catch (error: any) {
+    console.error("Error in adminAddUserAction:", error);
+    // If Firebase Auth user was created but Firestore profile failed, attempt to delete Auth user
+    if (newAuthUser && newAuthUser.user && newAuthUser.user.delete) {
+      try {
+        await newAuthUser.user.delete();
+        console.warn("AdminAddUserAction: Rolled back Firebase Auth user due to Firestore error.");
+      } catch (deleteError) {
+        console.error("AdminAddUserAction: CRITICAL - Failed to roll back Firebase Auth user:", deleteError);
+      }
+    }
+    return { success: false, message: error.message || "Failed to create user.", error: error.message };
+  }
+}
+
+
+    

@@ -1,3 +1,4 @@
+
 // src/lib/email-service.ts
 "use server";
 
@@ -6,10 +7,33 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, addDoc, Timestamp } from "firebase/firestore";
 
 interface EmailServiceDataPayload {
-  toEmail?: string; // Allow overriding fetched email
-  fullName?: string; // Allow overriding fetched name
-  firstName?: string; // Allow overriding fetched name
-  [key: string]: any; // For other dynamic data like amount, reason, link, etc.
+  toEmail?: string; 
+  fullName?: string; 
+  firstName?: string;
+  accountNumber?: string;
+  // Fields for DEBIT_NOTIFICATION / CREDIT_NOTIFICATION
+  amount?: number;
+  currency?: string;
+  description?: string;
+  location?: string;
+  valueDate?: string;
+  remarks?: string;
+  time?: string;
+  currentBalance?: number;
+  availableBalance?: number;
+  docNumber?: string;
+  transactionId?: string; // For linking to the transaction
+  // Fields for WELCOME_EMAIL
+  loginLink?: string;
+  // Fields for TRANSFER_SUCCESS / TRANSFER_FAILED
+  recipientName?: string;
+  reason?: string; // For rejections/failures
+  // Fields for LOAN_APPROVED / LOAN_REJECTED
+  loanId?: string;
+  loanAmount?: number;
+  approvalDate?: string; // Or Date
+  rejectionDate?: string; // Or Date
+  // ... any other dynamic data your templates might need for various types
 }
 
 interface EmailServiceResult {
@@ -19,17 +43,18 @@ interface EmailServiceResult {
   error?: string;
 }
 
-async function getUserDetails(userId: string): Promise<{ email: string | null; fullName: string | null; firstName: string | null; accountNumber: string | null }> {
+async function getUserDetails(userId?: string): Promise<{ email: string | null; fullName: string | null; firstName: string | null; accountNumber: string | null }> {
   if (!userId) return { email: null, fullName: null, firstName: null, accountNumber: null };
   try {
     const userDocRef = doc(db, "users", userId);
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
       const userData = userDocSnap.data() as UserProfile;
+      const constructedFullName = userData.displayName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || "User";
       return {
         email: userData.email,
-        fullName: userData.displayName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || null,
-        firstName: userData.firstName || null,
+        fullName: constructedFullName,
+        firstName: userData.firstName || "User",
         accountNumber: userData.accountNumber || null,
       };
     }
@@ -42,32 +67,22 @@ async function getUserDetails(userId: string): Promise<{ email: string | null; f
 }
 
 export async function sendTransactionalEmail(
-  // userId is optional if toEmail is provided directly in data
-  // but highly recommended for fetching other user-specific details for templates
   {
-    userId,
+    userId, // Optional: if toEmail and fullName are provided directly in data
     emailType,
-    data,
+    data, // This object should contain all fields for the NotificationData, including toEmail/fullName if not relying on userId fetch
     toEmailOverride,
   }: {
     userId?: string;
     emailType: EmailType;
-    data: EmailServiceDataPayload;
-    toEmailOverride?: string; // Explicitly pass if userId is not available or to override
+    data: Partial<Omit<NotificationData, 'type' | 'status' | 'createdAt' | 'bankName' | 'logoUrl' >> & { toEmail?: string; fullName?: string; firstName?: string; }; // Make specific fields from NotificationData optional
+    toEmailOverride?: string;
   }
 ): Promise<EmailServiceResult> {
+  
   console.log(`EmailService: Attempting to queue email. Type: ${emailType}, UserID: ${userId || 'N/A'}, Data:`, JSON.stringify(data));
 
-  let userDetails: { email: string | null; fullName: string | null; firstName: string | null; accountNumber: string | null } = {
-    email: null,
-    fullName: null,
-    firstName: null,
-    accountNumber: null,
-  };
-
-  if (userId) {
-    userDetails = await getUserDetails(userId);
-  }
+  const userDetails = await getUserDetails(userId);
 
   const finalToEmail = toEmailOverride || data.toEmail || userDetails.email;
   const finalFullName = data.fullName || userDetails.fullName || "Valued User";
@@ -77,47 +92,45 @@ export async function sendTransactionalEmail(
   console.log(`EmailService: Determined recipient: ${finalToEmail}, Name: ${finalFullName}`);
 
   if (!finalToEmail) {
-    console.error(`EmailService: Critical error - No recipient email address determined for email type ${emailType}, UserID: ${userId}. Cannot queue notification.`);
+    console.error(`EmailService: CRITICAL - No recipient email address determined for email type ${emailType}, UserID: ${userId || 'N/A'}, Data: ${JSON.stringify(data)}. Cannot queue notification.`);
     return {
       success: false,
       message: "Failed to queue notification: Recipient email address is missing.",
-      error: "Recipient email address could not be determined.",
+      error: "Recipient email address could not be determined from provided data or user profile.",
     };
   }
-
-  const bankName = process.env.FROM_NAME || "Wohana Funds";
-  const logoUrl = data.logoUrl || `https://placehold.co/150x50.png?text=${encodeURIComponent(bankName)}`;
+  
+  const bankName = process.env.FROM_NAME || "Wohana Funds"; // Should be configured in Cloud Function env
+  const logoUrl = data.logoUrl || `https://placehold.co/150x50.png?text=${encodeURIComponent(bankName)}`; // Placeholder
 
   const notificationDoc: Omit<NotificationData, "id"> = {
     type: emailType,
     toEmail: finalToEmail,
     fullName: finalFullName,
     firstName: finalFirstName,
-    accountNumber: finalAccountNumber,
+    accountNumber: finalAccountNumber, // Can be null if userDetails.accountNumber is null
     status: "pending",
     createdAt: Timestamp.now(),
-    bankName: bankName,
-    logoUrl: logoUrl,
-    // Spread other data payload which might contain amount, description, reason etc.
+    bankName: bankName, // For template consistency
+    logoUrl: logoUrl,   // For template consistency
+    // Spread other dynamic data
     ...data,
   };
 
-  // Remove undefined properties from data before spreading to avoid Firestore issues
-  // although Firestore addDoc/setDoc usually handles undefined by omitting fields.
-  // This is an extra precaution or for clarity.
-  Object.keys(notificationDoc).forEach(key => {
-    if (notificationDoc[key as keyof typeof notificationDoc] === undefined) {
-      delete notificationDoc[key as keyof typeof notificationDoc];
+  // Remove undefined properties explicitly to avoid Firestore issues
+  Object.keys(notificationDoc).forEach(keyStr => {
+    const key = keyStr as keyof typeof notificationDoc;
+    if (notificationDoc[key] === undefined) {
+      delete notificationDoc[key];
     }
   });
-
 
   console.log("EmailService: Notification document prepared for Firestore:", JSON.stringify(notificationDoc));
 
   try {
     const notificationsColRef = collection(db, "notifications");
     const docRef = await addDoc(notificationsColRef, notificationDoc);
-    console.log(`EmailService: Notification queued successfully to Firestore with ID: ${docRef.id}`);
+    console.log(`EmailService: Notification queued successfully to Firestore with ID: ${docRef.id} for type ${emailType} to ${finalToEmail}`);
     return {
       success: true,
       message: `Notification successfully queued for ${emailType}.`,
@@ -135,3 +148,8 @@ export async function sendTransactionalEmail(
     };
   }
 }
+
+// Kept for potential direct use if needed, but sendTransactionalEmail is preferred.
+export { getUserDetails as getUserEmail }; // Re-exporting for clarity if needed, but prefer getUserDetails
+export { getUserDetails };
+    
