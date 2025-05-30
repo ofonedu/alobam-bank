@@ -69,7 +69,13 @@ export function KYCForm({ onSuccess }: KYCFormProps) {
         await fetchUserProfile(user.uid); 
         if (onSuccess) onSuccess(result);
       } else {
-        toast({ title: "KYC Submission Failed", description: result.message || "An error occurred.", variant: "destructive" });
+        // The result.message from submitKycAction now includes more specific error details
+        toast({ 
+            title: "KYC Submission Failed", 
+            description: result.message || "An error occurred. Please check your inputs and try again.", 
+            variant: "destructive",
+            duration: 10000 // Give more time for potentially longer error messages
+        });
         if (result.error && typeof result.error !== 'string') {
           Object.entries(result.error).forEach(([fieldName, errors]) => {
             const field = fieldName as keyof KYCFormData;
@@ -81,7 +87,7 @@ export function KYCForm({ onSuccess }: KYCFormProps) {
       }
     } catch (error) {
       console.error("KYC submission error", error);
-      toast({ title: "Error", description: "An unexpected error occurred.", variant: "destructive" });
+      toast({ title: "Error", description: "An unexpected error occurred during KYC submission.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }

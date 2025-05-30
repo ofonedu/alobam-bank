@@ -23,46 +23,60 @@ export async function submitKycAction(
   userId: string,
   formData: KYCFormData
 ): Promise<KYCSubmissionResult> {
+  if (!userId) {
+    return { success: false, message: "User ID is required for KYC submission." };
+  }
   try {
     const validatedData = KYCFormSchema.safeParse(formData);
     if (!validatedData.success) {
       return {
         success: false,
-        message: "Invalid form data.",
+        message: "Invalid form data. Please check your inputs.",
         error: validatedData.error.flatten().fieldErrors,
       };
     }
 
     const { fullName, dateOfBirth, address, governmentId, governmentIdPhoto } = validatedData.data;
 
-    if (!governmentIdPhoto || governmentIdPhoto.length === 0) {
-        return { success: false, message: "Government ID photo is missing." };
-    }
-    const photoFile = governmentIdPhoto[0] as File;
     let uploadedPhotoUrl = "";
-    let photoFileName = photoFile.name;
+    let photoFileName = "";
 
-    try {
-      console.log(`submitKycAction: Attempting to upload KYC photo for user ${userId}, filename: ${photoFile.name}, size: ${photoFile.size}, type: ${photoFile.type}`);
-      const filePath = `kycDocuments/${userId}/${Date.now()}_${photoFile.name}`;
-      const storageRef = ref(storage, filePath);
-      
-      console.log(`submitKycAction: Storage reference created: ${storageRef.toString()}`);
-      const snapshot = await uploadBytes(storageRef, photoFile);
-      uploadedPhotoUrl = await getDownloadURL(snapshot.ref);
-      console.log(`submitKycAction: KYC photo uploaded successfully for user ${userId}. URL: ${uploadedPhotoUrl}`);
+    if (governmentIdPhoto && governmentIdPhoto[0]) {
+      const photoFile = governmentIdPhoto[0] as File;
+      photoFileName = photoFile.name;
 
-    } catch (uploadError: any) {
-      console.error(`submitKycAction: Critical error uploading KYC photo to Firebase Storage for user ${userId}:`);
-      console.error("Detailed Firebase Storage Upload Error Code:", uploadError.code);
-      console.error("Detailed Firebase Storage Upload Error Message:", uploadError.message);
-      console.error("Detailed Firebase Storage Upload Error Name:", uploadError.name);
-      console.error("Full Firebase Storage Upload Error Object:", JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)));
-      return {
-        success: false,
-        message: "Failed to upload ID photo. Please check server logs for details and try again.",
-        error: `Storage Upload Error: ${uploadError.code || 'Unknown'} - ${uploadError.message || 'No specific message.'}`,
-      };
+      try {
+        console.log(`submitKycAction: Attempting to upload KYC photo for user ${userId}, filename: ${photoFile.name}, size: ${photoFile.size}, type: ${photoFile.type}`);
+        const filePath = `kycDocuments/${userId}/${Date.now()}_${photoFile.name}`;
+        const storageRef = ref(storage, filePath);
+        
+        console.log(`submitKycAction: Storage reference created: ${storageRef.toString()}`);
+        const snapshot = await uploadBytes(storageRef, photoFile);
+        uploadedPhotoUrl = await getDownloadURL(snapshot.ref);
+        console.log(`submitKycAction: KYC photo uploaded successfully for user ${userId}. URL: ${uploadedPhotoUrl}`);
+
+      } catch (uploadError: any) {
+        console.error(`submitKycAction: Critical error uploading KYC photo to Firebase Storage for user ${userId}:`);
+        console.error("Detailed Firebase Storage Upload Error Code:", uploadError.code);
+        console.error("Detailed Firebase Storage Upload Error Message:", uploadError.message);
+        console.error("Detailed Firebase Storage Upload Error Name:", uploadError.name);
+        console.error("Full Firebase Storage Upload Error Object:", JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)));
+        
+        const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}`;
+        return {
+          success: false,
+          message: `Failed to upload ID photo. ${specificErrorMessage}`,
+          error: specificErrorMessage,
+        };
+      }
+    } else {
+      // This case should ideally be caught by Zod validation if photo is mandatory
+      console.warn(`submitKycAction: No governmentIdPhoto provided or file is missing for user ${userId}.`);
+       return {
+          success: false,
+          message: "Government ID photo was not provided or is invalid. Please select a file.",
+          error: "No photo file in form data.",
+        };
     }
     
     const kycDocRef = doc(db, "kycData", userId);
@@ -89,6 +103,7 @@ export async function submitKycAction(
     
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
+    // No AI risk assessment call
 
     return {
       success: true,
@@ -100,7 +115,7 @@ export async function submitKycAction(
     console.error("Error submitting KYC:", error);
     return {
       success: false,
-      message: "An unexpected error occurred during KYC submission.",
+      message: "An unexpected error occurred during KYC submission. Please try again.",
       error: error.message,
     };
   }
@@ -157,7 +172,11 @@ export async function recordTransferAction(
   
   try {
     const settingsResult = await getPlatformSettingsAction();
-    const cotPercentageToUse = platformCotPercentage ?? settingsResult.settings?.cotPercentage ?? 0.01;
+    let cotPercentageToUse = platformCotPercentage;
+    if (cotPercentageToUse === undefined || cotPercentageToUse === null) {
+        cotPercentageToUse = settingsResult.settings?.cotPercentage ?? 0.01; // Default to 1% if not set
+    }
+
 
     const cotAmount = transferData.amount * cotPercentageToUse;
     const totalDeduction = transferData.amount + cotAmount;
@@ -190,7 +209,6 @@ export async function recordTransferAction(
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", userId);
-      // User doc already fetched, re-get inside transaction for atomicity
       const freshUserDoc = await transaction.get(userDocRef); 
       if (!freshUserDoc.exists()) {
         throw new Error("User profile not found within transaction.");
@@ -213,6 +231,7 @@ export async function recordTransferAction(
         recipientDetails.accountNumber = transferData.recipientAccountNumberIBAN;
       }
       if (transferData.bankName) recipientDetails.bankName = transferData.bankName;
+      
       if ('swiftBic' in transferData && transferData.swiftBic && transferData.swiftBic.trim() !== "") {
         recipientDetails.swiftBic = transferData.swiftBic;
       }
@@ -220,7 +239,7 @@ export async function recordTransferAction(
         recipientDetails.country = transferData.country;
       }
       
-      const authDetailsToSave: AuthorizationDetails = { 
+      const authDetailsToSave: Partial<AuthorizationDetails> = { 
         cot: parseFloat(cotAmount.toFixed(2)),
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
@@ -237,15 +256,16 @@ export async function recordTransferAction(
         status: "completed",
         currency: 'currency' in transferData ? transferData.currency : "USD", 
         ...(Object.keys(recipientDetails).length > 0 && { recipientDetails: recipientDetails as TransactionType['recipientDetails'] }),
-        ...(Object.keys(authDetailsToSave).length > 1 && { authorizationDetails: authDetailsToSave }),
+        ...(Object.keys(authDetailsToSave).length > 1 && { authorizationDetails: authDetailsToSave as AuthorizationDetails }),
       };
-      const transactionDocRef = doc(collection(db, "transactions")); // Generate ref before setting
-      transaction.set(transactionDocRef, newTransactionData); // Use transaction.set
+      const transactionDocRef = doc(collection(db, "transactions")); 
+      transaction.set(transactionDocRef, newTransactionData); 
 
-      // Mark codes as used within the same Firestore transaction
-      if (cotCodeId) await markCodeAsUsed(cotCodeId, transaction);
-      if (imfCodeId) await markCodeAsUsed(imfCodeId, transaction);
-      if (taxCodeId) await markCodeAsUsed(taxCodeId, transaction);
+      const firestoreBatchForCodes = writeBatch(db); // Use a separate batch or pass the transaction
+      if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes); // Pass batch to markCodeAsUsed
+      if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
+      if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
+      await firestoreBatchForCodes.commit(); // Commit batch for code usage marking
       
       return { balance: updatedBalance, transactionId: transactionDocRef.id };
     });
@@ -253,11 +273,9 @@ export async function recordTransferAction(
     // Send email after successful transaction
     if (userProfile.email && transactionResult.transactionId) {
       await sendTransactionalEmail({
-        userId: userId, // Pass userId so email service can fetch details if needed
+        userId: userId, 
         emailType: "TRANSFER_SUCCESS",
         data: {
-          toEmail: userProfile.email,
-          fullName: userProfile.displayName || `${userProfile.firstName} ${userProfile.lastName}`,
           accountNumber: userProfile.accountNumber,
           amount: transferData.amount,
           currency: 'currency' in transferData ? transferData.currency : "USD",
@@ -267,6 +285,7 @@ export async function recordTransferAction(
           availableBalance: transactionResult.balance,
           valueDate: new Date().toLocaleDateString(),
           time: new Date().toLocaleTimeString(),
+          description: `Transfer to ${transferData.recipientName}`,
           remarks: transferData.remarks || `Transfer to ${transferData.recipientName}`,
         },
       });
@@ -288,16 +307,15 @@ export async function recordTransferAction(
     const userEmailForFailure = userProfile?.email;
     if (userEmailForFailure) {
       await sendTransactionalEmail({
-        userId: userId, // Pass userId
+        userId: userId, 
         emailType: "TRANSFER_FAILED",
         data: {
-          toEmail: userEmailForFailure,
-          fullName: userProfile.displayName || `${userProfile.firstName} ${userProfile.lastName}`,
           accountNumber: userProfile.accountNumber,
           amount: transferData.amount,
           currency: 'currency' in transferData ? transferData.currency : "USD",
           recipientName: transferData.recipientName,
           reason: error.message || "Unknown error",
+          description: `Attempted transfer to ${transferData.recipientName}`, 
         },
       });
     }
@@ -334,9 +352,9 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
       let transactionDate = new Date(); 
       if (data.date && typeof (data.date as Timestamp).toDate === 'function') {
         transactionDate = (data.date as Timestamp).toDate();
-      } else if (data.date instanceof Date) { // If it's already a JS Date
+      } else if (data.date instanceof Date) { 
         transactionDate = data.date;
-      } else if (data.date) { // Fallback for string/number representation
+      } else if (data.date) { 
         try {
           const parsedDate = new Date(data.date as string | number);
           if (!isNaN(parsedDate.getTime())) {
@@ -352,9 +370,9 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
       }
 
       return {
-        id: docSnap.id, // Ensure id is always populated
+        id: docSnap.id, 
         ...data,
-        date: transactionDate, // Ensure date is a JS Date object
+        date: transactionDate, 
       } as TransactionType;
     });
     return { success: true, transactions };
@@ -395,11 +413,14 @@ export async function updateUserProfileInformationAction(
       firstName,
       lastName,
       displayName: `${firstName} ${lastName}`,
-      phoneNumber: phoneNumber || undefined, // Store as undefined if empty, not ""
     };
     
-    // Remove undefined fields to avoid Firestore errors
-    Object.keys(updateData).forEach(key => updateData[key as keyof typeof updateData] === undefined && delete updateData[key as keyof typeof updateData]);
+    if (phoneNumber !== undefined) { // Only include phoneNumber if it's explicitly provided (even if empty string)
+        updateData.phoneNumber = phoneNumber;
+    }
+    
+    // Remove undefined fields to avoid Firestore errors - this is implicitly handled by how updateData is constructed
+    // Object.keys(updateData).forEach(key => updateData[key as keyof typeof updateData] === undefined && delete updateData[key as keyof typeof updateData]);
 
 
     await updateDoc(userDocRef, updateData);
@@ -465,7 +486,7 @@ export async function submitLoanApplicationAction(
       interestRate: 0.08, 
       status: "pending",
       applicationDate: Timestamp.now(),
-      currency: userProfile.currency || "USD", // Add currency
+      currency: userProfile.currency || "USD", 
     };
 
     const loanDocRef = await addDoc(loansColRef, newLoanDocData);
@@ -524,14 +545,14 @@ export async function submitSupportTicketAction(
     const supportTicketsColRef = collection(db, "supportTickets");
     const newTicketData: Omit<AdminSupportTicket, "id" | "createdAt" | "updatedAt"> & { createdAt: Timestamp; updatedAt: Timestamp } = {
       userId,
-      userName: userProfile.displayName || "N/A",
+      userName: userProfile.displayName || `${userProfile.firstName} ${userProfile.lastName}`.trim() || "N/A",
       userEmail: userProfile.email || "N/A",
       subject: validatedData.data.subject,
       message: validatedData.data.message,
       status: "open",
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-      priority: "medium", // Default priority
+      priority: "medium", 
     };
 
     const ticketDocRef = await addDoc(supportTicketsColRef, newTicketData);
@@ -552,5 +573,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
-    
