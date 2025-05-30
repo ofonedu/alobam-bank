@@ -21,14 +21,14 @@ import {
 import { revalidatePath } from "next/cache";
 
 interface SerializableAuthorizationCode extends Omit<AuthorizationCodeType, 'createdAt' | 'expiresAt'> {
-  createdAt: string;
-  expiresAt?: string;
+  createdAt: string; // Store as ISO string for client
+  expiresAt?: string; // Store as ISO string for client
 }
 
 interface GenerateCodeResult {
   success: boolean;
   message?: string;
-  code?: AuthorizationCodeType;
+  code?: SerializableAuthorizationCode; // Return serializable code
   error?: string;
 }
 
@@ -39,49 +39,46 @@ export async function generateAuthorizationCodeAction(
   try {
     const randomCodeValue = Math.random().toString(36).substring(2, 10).toUpperCase();
     
-    // Initialize with fields always present
     const newCodeDataObject: Omit<AuthorizationCodeType, 'id' | 'userId' | 'expiresAt'> & { userId?: string; expiresAt?: Timestamp } = {
       value: randomCodeValue,
       type,
       createdAt: Timestamp.now(),
       isUsed: false,
-      generatedBy: "admin_system_placeholder",
+      generatedBy: "admin_system_placeholder", // In a real app, capture the actual admin's UID
     };
 
-    // Conditionally add userId if it's a non-empty string
     if (userId && userId.trim() !== "") {
       newCodeDataObject.userId = userId;
     }
-    // expiresAt can be added here if needed, e.g.:
-    // newCodeDataObject.expiresAt = Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
-
+    // Example for expiresAt if you wanted to add it:
+    // newCodeDataObject.expiresAt = Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Expires in 24 hours
 
     const codesCollectionRef = collection(db, "authorizationCodes");
-    // Cast to the full expected type for addDoc, Firestore handles optional fields correctly if they are not present
     const docRef = await addDoc(codesCollectionRef, newCodeDataObject as Omit<AuthorizationCodeType, 'id'>);
     
     revalidatePath("/admin/authorization-codes");
 
-    // Construct the full code object for the return value
-    const returnedCode: AuthorizationCodeType = {
+    // Construct the serializable code object for the return value
+    const generatedCodeForClient: SerializableAuthorizationCode = {
         id: docRef.id,
         value: newCodeDataObject.value,
         type: newCodeDataObject.type,
-        createdAt: newCodeDataObject.createdAt,
+        createdAt: newCodeDataObject.createdAt.toDate().toISOString(), // Convert Timestamp to ISO string
         isUsed: newCodeDataObject.isUsed,
         generatedBy: newCodeDataObject.generatedBy,
     };
+
     if (newCodeDataObject.userId) {
-        returnedCode.userId = newCodeDataObject.userId;
+        generatedCodeForClient.userId = newCodeDataObject.userId;
     }
     if (newCodeDataObject.expiresAt) {
-        returnedCode.expiresAt = newCodeDataObject.expiresAt;
+        generatedCodeForClient.expiresAt = newCodeDataObject.expiresAt.toDate().toISOString(); // Convert Timestamp to ISO string
     }
 
     return {
       success: true,
       message: `${type} code generated successfully.`,
-      code: returnedCode
+      code: generatedCodeForClient
     };
   } catch (error: any) {
     console.error("Error generating authorization code. Details:", error);
@@ -114,7 +111,7 @@ export async function getAuthorizationCodesAction(): Promise<GetCodesResult> {
         createdAtDate = data.createdAt;
       }
        else {
-        createdAtDate = new Date(data.createdAt); // Fallback, might be incorrect if data.createdAt is not a valid date string/number
+        createdAtDate = new Date(data.createdAt as string | number); 
       }
 
       let expiresAtDate: Date | undefined = undefined;
@@ -124,7 +121,7 @@ export async function getAuthorizationCodesAction(): Promise<GetCodesResult> {
         } else if (data.expiresAt instanceof Date) {
             expiresAtDate = data.expiresAt;
         } else {
-            expiresAtDate = new Date(data.expiresAt);
+            expiresAtDate = new Date(data.expiresAt as string | number);
         }
       }
 
@@ -132,12 +129,12 @@ export async function getAuthorizationCodesAction(): Promise<GetCodesResult> {
         id: docSnap.id,
         value: data.value,
         type: data.type,
-        userId: data.userId, // Will be undefined if not present in Firestore
+        userId: data.userId, 
         createdAt: createdAtDate.toISOString(),
         expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
         isUsed: data.isUsed,
         generatedBy: data.generatedBy,
-      };
+      } as SerializableAuthorizationCode; // Ensure type matches
     });
     
     return { success: true, codes };
@@ -175,7 +172,6 @@ export async function validateAuthorizationCode(
   try {
     const codesCollectionRef = collection(db, "authorizationCodes");
     
-    // Attempt to find a user-specific code first if userId is provided
     if (userId) {
         const userSpecificQuery = query(
             codesCollectionRef,
@@ -189,33 +185,19 @@ export async function validateAuthorizationCode(
         if (!userSnapshot.empty) {
             const codeDoc = userSnapshot.docs[0];
             const codeData = codeDoc.data() as AuthorizationCodeType;
-            if (codeData.expiresAt && codeData.expiresAt.toMillis() < Date.now()) {
+            if (codeData.expiresAt && (codeData.expiresAt as Timestamp).toMillis() < Date.now()) {
                 return { valid: false, message: `${type} code has expired.` };
             }
             return { valid: true, codeId: codeDoc.id };
         }
     }
 
-    // If no user-specific code was found (or if userId wasn't provided), check for a global code
-    // Global codes are identified by having no userId field or userId being explicitly null.
-    // For simplicity, we'll query for codes where userId is not set (or not equal to any specific user if that was possible)
-    // A more robust way is to ensure global codes either have userId: null or the field is absent.
-    // Firestore's '!=' and 'not-in' queries have limitations with non-existent fields.
-    // So, we'll query for codes that match value, type, and isUsed, then filter client-side or ensure schema discipline.
-    // Let's refine to query for userId == null (which implies it was explicitly set to null for global)
-    // OR rely on the fact that if userId was provided above and not found, the next check can be for truly global (userId absent)
-
     const globalQueryConstraints = [
         where("value", "==", codeValue),
         where("type", "==", type),
         where("isUsed", "==", false),
-        // To find "global" codes, we look for codes where 'userId' is explicitly null or not set.
-        // Firestore queries for "field does not exist" are not direct.
-        // We can query for `userId == null`. If you save global codes by *omitting* the userId field, this won't find them.
-        // A common pattern is to save global codes with `userId: null`.
-        where("userId", "==", null) // This finds codes explicitly marked as global with userId: null
+        where("userId", "==", null) 
     ];
-
 
     const globalQ = query(codesCollectionRef, ...globalQueryConstraints, limit(1));
     const globalSnapshot = await getDocs(globalQ);
@@ -223,16 +205,16 @@ export async function validateAuthorizationCode(
     if (!globalSnapshot.empty) {
         const codeDoc = globalSnapshot.docs[0];
         const codeData = codeDoc.data() as AuthorizationCodeType;
-         if (codeData.expiresAt && codeData.expiresAt.toMillis() < Date.now()) {
+         if (codeData.expiresAt && (codeData.expiresAt as Timestamp).toMillis() < Date.now()) {
             return { valid: false, message: `${type} code has expired.` };
         }
         return { valid: true, codeId: codeDoc.id };
     }
     
-    // If we are here, no valid user-specific or global (with userId: null) code was found.
     return { valid: false, message: `Invalid or already used ${type} code, or code not found for this user.` };
 
-  } catch (error: any) {
+  } catch (error: any)
+{
     console.error("Error validating authorization code:", error);
     return { valid: false, message: "Error during code validation." };
   }
@@ -245,9 +227,6 @@ export async function markCodeAsUsed(
 ): Promise<boolean> {
     try {
         const codesCollectionRef = collection(db, "authorizationCodes");
-        // Find the specific code that is NOT used yet
-        // This needs to be more specific if codes can be reused by different users or types.
-        // Assuming value + type should be unique for active codes.
         const q = query(
             codesCollectionRef,
             where("value", "==", codeValue),
@@ -276,3 +255,6 @@ export async function markCodeAsUsed(
         return false;
     }
 }
+
+// Removed re-export of getPlatformSettingsAction as it caused "use server" issues.
+// Import it directly where needed from './admin-settings-actions'.
