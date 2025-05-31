@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KYCForm } from "./components/kyc-form";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchKycData, type KYCSubmissionResult } from "@/lib/actions";
-import type { KYCData } from "@/types";
+import { fetchKycData } from "@/lib/actions";
+import type { KYCData, ClientKYCData, KYCSubmissionResult } from "@/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ShieldCheck, ShieldX, ShieldQuestion, AlertTriangle } from "lucide-react";
@@ -15,14 +15,14 @@ import type { Timestamp } from "firebase/firestore";
 
 export default function KYCPage() {
   const { user, userProfile } = useAuth();
-  const [kycData, setKycData] = useState<KYCData | null>(null);
+  const [kycData, setKycData] = useState<KYCData | null>(null); // Stores KYCData with Date objects
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadKycData() {
       if (user?.uid) {
         setIsLoading(true);
-        const data = await fetchKycData(user.uid);
+        const data = await fetchKycData(user.uid); // fetchKycData returns KYCData with Date objects
         setKycData(data);
         setIsLoading(false);
       } else {
@@ -33,26 +33,21 @@ export default function KYCPage() {
   }, [user]);
 
   const handleKycSuccess = (result: KYCSubmissionResult) => {
-    if (result.kycData) {
-        // Ensure dates are Date objects
+    if (result.kycData) { // result.kycData is ClientKYCData (dates as ISO strings)
+        const clientData = result.kycData;
         const processedKycData: KYCData = {
-            ...result.kycData,
-            submittedAt: result.kycData.submittedAt ? 
-                            ((result.kycData.submittedAt as Timestamp)?.toDate ? 
-                            (result.kycData.submittedAt as Timestamp).toDate() : 
-                            new Date(result.kycData.submittedAt as Date | string | number)) : undefined,
-            reviewedAt: result.kycData.reviewedAt ? 
-                            ((result.kycData.reviewedAt as Timestamp)?.toDate ? 
-                            (result.kycData.reviewedAt as Timestamp).toDate() : 
-                            new Date(result.kycData.reviewedAt as Date | string | number)) : undefined,
+            ...clientData,
+            userId: clientData.userId || (user?.uid || ""), // Ensure userId is present
+            submittedAt: clientData.submittedAt ? new Date(clientData.submittedAt) : undefined,
+            reviewedAt: clientData.reviewedAt ? new Date(clientData.reviewedAt) : undefined,
         };
       setKycData(processedKycData);
     }
   };
-  
+
   const getStatusBadgeVariant = (status?: KYCData["status"]): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
-      case "verified": return "default"; 
+      case "verified": return "default";
       case "pending_review": return "secondary";
       case "rejected": return "destructive";
       default: return "outline";
@@ -70,28 +65,14 @@ export default function KYCPage() {
 
   const kycDisplayStatus = kycData?.status?.replace("_", " ") || userProfile?.kycStatus?.replace("_", " ") || "Not Started";
 
-  const formatDate = (dateInput: Date | Timestamp | string | number | undefined): string => {
+  // formatDate now expects Date object or undefined directly from kycData state
+  const formatDate = (dateInput: Date | undefined): string => {
     if (!dateInput) return "N/A";
-    let date: Date;
-    if ((dateInput as Timestamp)?.toDate && typeof (dateInput as Timestamp).toDate === 'function') {
-      date = (dateInput as Timestamp).toDate();
-    } else if (dateInput instanceof Date) {
-      date = dateInput;
-    } else {
-      try {
-        const parsedDate = new Date(dateInput as string | number);
-        if (!isNaN(parsedDate.getTime())) {
-          date = parsedDate;
-        } else {
-          console.warn("formatDate: Received unparsable date input:", dateInput);
-          return "Invalid Date";
-        }
-      } catch (e) {
-        console.warn("formatDate: Error parsing date input:", dateInput, e);
+    if (!(dateInput instanceof Date) || isNaN(dateInput.getTime())) {
+        console.warn("formatDate: Received invalid Date object:", dateInput);
         return "Invalid Date";
-      }
     }
-    return date.toLocaleDateString();
+    return dateInput.toLocaleDateString();
   };
 
 
@@ -125,12 +106,12 @@ export default function KYCPage() {
               </Badge>
               {kycData?.submittedAt && (
                 <p className="text-sm text-muted-foreground mt-2">
-                  Submitted on: {formatDate(kycData.submittedAt)}
+                  Submitted on: {formatDate(kycData.submittedAt as Date)}
                 </p>
               )}
               {kycData?.reviewedAt && (
                 <p className="text-sm text-muted-foreground">
-                  Reviewed on: {formatDate(kycData.reviewedAt)}
+                  Reviewed on: {formatDate(kycData.reviewedAt as Date)}
                 </p>
               )}
                {kycData?.rejectionReason && kycData.status === 'rejected' && (
@@ -144,8 +125,6 @@ export default function KYCPage() {
               )}
             </CardContent>
           </Card>
-          
-          {/* AI Risk Assessment Card Removed */}
 
           {(kycData?.status === "not_started" || kycData?.status === "rejected" || !kycData) &&
            (!userProfile || userProfile.kycStatus === "not_started" || userProfile.kycStatus === "rejected") && (
@@ -153,7 +132,7 @@ export default function KYCPage() {
               <CardHeader>
                 <CardTitle>Submit Your KYC Information</CardTitle>
                 <CardDescription>
-                  {kycData?.status === "rejected" 
+                  {kycData?.status === "rejected"
                     ? "Your previous KYC submission was rejected. Please review any feedback and resubmit."
                     : "Please fill out the form below to complete your KYC verification."}
                 </CardDescription>
@@ -198,4 +177,3 @@ export default function KYCPage() {
     </div>
   );
 }
-

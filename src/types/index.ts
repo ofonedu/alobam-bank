@@ -4,7 +4,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 import type { Timestamp } from "firebase/firestore";
 import type { z } from "zod";
 import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas"; // KYCFormData added
-import type { KYCSubmissionResult } from "@/lib/actions"; // KYCSubmissionResult added
+// KYCSubmissionResult removed from here, will be defined with ClientKYCData
 import type React from 'react';
 import type { ReactNode } from 'react'; // Added ReactNode import
 
@@ -16,7 +16,7 @@ export interface UserProfile {
   displayName?: string | null;
   photoURL?: string | null;
   phoneNumber?: string;
-  accountType?: string; 
+  accountType?: string;
   currency?: string;
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
@@ -29,7 +29,7 @@ export interface UserProfile {
 }
 
 export interface AuthorizationDetails {
-  cot?: number; 
+  cot?: number;
   cotCode?: string;
   imfCode?: string;
   taxCode?: string;
@@ -38,7 +38,7 @@ export interface AuthorizationDetails {
 export interface Transaction {
   id: string;
   userId: string;
-  date: Date | Timestamp; 
+  date: Date | Timestamp;
   description: string;
   amount: number;
   type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment";
@@ -73,17 +73,31 @@ export interface Loan {
 export interface KYCData {
   userId: string;
   fullName: string;
-  dateOfBirth: string; 
+  dateOfBirth: string;
   address: string;
   governmentId: string;
   photoUrl?: string;
   photoFileName?: string;
   status: "not_started" | "pending_review" | "verified" | "rejected";
-  submittedAt?: Date | Timestamp;
-  reviewedAt?: Date | Timestamp;
+  submittedAt?: Date | Timestamp; // For Firestore and server-side logic
+  reviewedAt?: Date | Timestamp;  // For Firestore and server-side logic
   reviewedBy?: string;
   rejectionReason?: string;
 }
+
+// Client-side representation of KYCData where dates are strings
+export interface ClientKYCData extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
+  submittedAt?: string; // ISO string
+  reviewedAt?: string;  // ISO string
+}
+
+export interface KYCSubmissionResult {
+  success: boolean;
+  message: string;
+  kycData?: ClientKYCData; // Use ClientKYCData for action result
+  error?: string | Record<string, string[]>;
+}
+
 
 export type AuthUser = FirebaseUser & { customData?: UserProfile };
 
@@ -98,7 +112,7 @@ export interface AdminLoanApplicationView extends Loan {
 
 export interface AdminTransactionView extends Transaction {
   // id is already in Transaction
-  userName?: string; 
+  userName?: string;
   userEmail?: string;
 }
 
@@ -126,14 +140,14 @@ export interface AccountType {
   id: string;
   name: string;
   description?: string;
-  createdAt: Date | Timestamp; 
+  createdAt: Date | Timestamp;
 }
 
 export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
-  id: string; 
+  id: string;
   userEmail?: string;
-  submittedAt: Date; 
-  reviewedAt?: Date;  
+  submittedAt: Date; // Already converted to Date in admin page fetch
+  reviewedAt?: Date;  // Already converted to Date in admin page fetch
 }
 
 
@@ -155,7 +169,7 @@ export interface PlatformSettings {
 
 // Landing Page Content Types
 export interface NavLinkItem {
-  id?: string; 
+  id?: string;
   label: string;
   href: string;
 }
@@ -171,7 +185,7 @@ export interface HeroSectionContent {
 }
 
 export interface FeatureItem {
-  id?: string; 
+  id?: string;
   icon: string;
   title: string;
   description: string;
@@ -184,7 +198,7 @@ export interface FeaturesOverviewContent {
 }
 
 export interface AccountOfferingItem {
-  id?: string; 
+  id?: string;
   icon: string;
   name: string;
   description: string;
@@ -240,13 +254,13 @@ export interface FinalCTAContent {
 
 
 export interface FooterLinkColumn {
-  id?: string; 
+  id?: string;
   title: string;
   links: NavLinkItem[];
 }
 
 export interface SocialMediaLink {
-  id?: string; 
+  id?: string;
   platform: string;
   href: string;
   iconName?: string;
@@ -257,7 +271,7 @@ export interface FooterContent {
   footerCopyright?: string;
   footerQuickLinkColumns?: FooterLinkColumn[];
   footerSocialMediaLinks?: SocialMediaLink[];
-  contactInfo?: { 
+  contactInfo?: {
     address?: string;
     phone?: string;
     email?: string;
@@ -284,7 +298,7 @@ export interface DashboardNavItem {
     label: string;
     icon: React.ElementType;
     subMenuPrefix?: string;
-    subItems?: DashboardNavItem[]; 
+    subItems?: DashboardNavItem[];
 }
 
 export interface DashboardNavProps {
@@ -320,7 +334,7 @@ export interface COTConfirmationDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   transferData: LocalTransferData | InternationalTransferData | null;
-  cotPercentage: number; 
+  cotPercentage: number;
   onConfirm: (cotCode: string) => void;
   onCancel: () => void;
 }
@@ -335,7 +349,7 @@ export interface IMFAuthorizationDialogProps {
 export interface TaxClearanceDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (taxCode: string) => void; 
+  onConfirm: (taxCode: string) => void;
   onCancel: () => void;
 }
 
@@ -381,7 +395,7 @@ export interface ViewTransactionDetailModalProps {
 export interface InfoPillProps {
   label: string;
   value?: string | number | boolean | null | React.ReactNode;
-  icon?: React.ReactNode; 
+  icon?: React.ReactNode;
   valueClassName?: string;
 }
 
@@ -396,11 +410,11 @@ export interface AuthorizationCode {
   id: string;
   value: string;
   type: 'COT' | 'IMF' | 'TAX';
-  userId?: string; // Optional: If code is specific to a user
+  userId?: string | null; // Allow null for Firestore compatibility
   createdAt: Timestamp;
   expiresAt?: Timestamp;
   isUsed: boolean;
   generatedBy: string; // Admin User ID or "system"
 }
 
-
+// Removed AI-related types: AIKYCRiskAssessment, AIFeatures, AIKYCRiskInput, AIKYCRiskOutput

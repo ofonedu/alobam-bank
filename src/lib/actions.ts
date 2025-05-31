@@ -4,20 +4,13 @@
 
 import { db, storage } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, PlatformSettings } from "@/types";
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, PlatformSettings, ClientKYCData, KYCSubmissionResult } from "@/types";
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
 import { sendTransactionalEmail } from "./email-service";
-import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions"; 
-import { getPlatformSettingsAction } from "./actions/admin-settings-actions"; 
-
-export interface KYCSubmissionResult {
-  success: boolean;
-  message: string;
-  kycData?: KYCData;
-  error?: string | Record<string, string[]>; 
-}
+import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions";
+import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
 
 export async function submitKycAction(
   userId: string,
@@ -49,23 +42,23 @@ export async function submitKycAction(
         console.log(`submitKycAction: Attempting to upload KYC photo for user ${userId}, filename: ${photoFile.name}, size: ${photoFile.size}, type: ${photoFile.type}`);
         const filePath = `kycDocuments/${userId}/${Date.now()}_${photoFile.name}`;
         const storageRef = ref(storage, filePath);
-        
+
         console.log(`submitKycAction: Storage reference created: ${storageRef.toString()}`);
         const snapshot = await uploadBytes(storageRef, photoFile);
         uploadedPhotoUrl = await getDownloadURL(snapshot.ref);
         console.log(`submitKycAction: KYC photo uploaded successfully for user ${userId}. URL: ${uploadedPhotoUrl}`);
 
       } catch (uploadError: any) {
+        const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED";
+        const projectId = storage.app.options.projectId || "PROJECT_ID_NOT_CONFIGURED";
         console.error(`submitKycAction: Critical error uploading KYC photo to Firebase Storage for user ${userId}:`);
         console.error("Detailed Firebase Storage Upload Error Code:", uploadError.code);
         console.error("Detailed Firebase Storage Upload Error Message:", uploadError.message);
         console.error("Detailed Firebase Storage Upload Error Name:", uploadError.name);
         console.error("Full Firebase Storage Upload Error Object:", JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)));
-        
-        const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
-        const projectId = storage.app.options.projectId || "PROJECT_ID_NOT_CONFIGURED";
+
         const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}. Attempted bucket: ${targetBucket} for Project ID: ${projectId}. Please ensure Firebase Storage is enabled and configured for this project in the Firebase Console.`;
-        
+
         return {
           success: false,
           message: `Failed to upload ID photo. ${specificErrorMessage}`,
@@ -80,41 +73,56 @@ export async function submitKycAction(
           error: "No photo file in form data.",
         };
     }
-    
+
     const kycDocRef = doc(db, "kycData", userId);
     const userDocRef = doc(db, "users", userId);
 
-    const newKycData: Omit<KYCData, 'userId' | 'status'> & {userId: string, status: "not_started" | "pending_review" | "verified" | "rejected" } = {
+    const newKycDataForFirestore: KYCData = { // Type for Firestore with Timestamp
       userId,
       fullName,
       dateOfBirth,
       address,
       governmentId,
-      photoUrl: uploadedPhotoUrl, 
+      photoUrl: uploadedPhotoUrl,
       photoFileName: photoFileName,
-      status: "pending_review", 
+      status: "pending_review",
       submittedAt: Timestamp.now(),
+      // reviewedAt, reviewedBy, rejectionReason will be set by admin
     };
-    
-    await setDoc(kycDocRef, newKycData, { merge: true });
+
+    await setDoc(kycDocRef, newKycDataForFirestore, { merge: true });
 
     const userProfileUpdate: Partial<UserProfile> = {
-      kycStatus: newKycData.status,
+      kycStatus: newKycDataForFirestore.status,
     };
     await updateDoc(userDocRef, userProfileUpdate);
-    
+
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
+
+    // Prepare serializable data for the client
+    const serializableKycData: ClientKYCData = {
+      userId: newKycDataForFirestore.userId,
+      fullName: newKycDataForFirestore.fullName,
+      dateOfBirth: newKycDataForFirestore.dateOfBirth,
+      address: newKycDataForFirestore.address,
+      governmentId: newKycDataForFirestore.governmentId,
+      photoUrl: newKycDataForFirestore.photoUrl,
+      photoFileName: newKycDataForFirestore.photoFileName,
+      status: newKycDataForFirestore.status,
+      submittedAt: (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString(),
+      // reviewedAt, reviewedBy, rejectionReason are not set here
+    };
 
     return {
       success: true,
       message: "KYC information submitted successfully. Awaiting review.",
-      kycData: newKycData as KYCData,
+      kycData: serializableKycData,
     };
 
   } catch (error: any) {
     console.error("Error submitting KYC:", error);
-    const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
+    const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED";
     const projectId = storage.app.options.projectId || "PROJECT_ID_NOT_CONFIGURED";
     const generalErrorMessage = `An unexpected error occurred during KYC submission. Attempted bucket: ${targetBucket} for Project ID: ${projectId}. Error: ${error.message}`;
     return {
@@ -132,15 +140,22 @@ export async function fetchKycData(userId: string): Promise<KYCData | null> {
   const kycDocSnap = await getDoc(kycDocRef);
   if (kycDocSnap.exists()) {
     const data = kycDocSnap.data();
-    const kycResult: Partial<KYCData> = {};
-    for (const key in data) {
-        if (data[key] instanceof Timestamp) {
-            (kycResult as any)[key] = (data[key] as Timestamp).toDate();
-        } else {
-            (kycResult as any)[key] = data[key];
-        }
-    }
-    return kycResult as KYCData;
+    // Convert Timestamps to Dates for internal use if needed, or return as is if action handles it
+    const kycResult: KYCData = {
+      userId: data.userId,
+      fullName: data.fullName,
+      dateOfBirth: data.dateOfBirth,
+      address: data.address,
+      governmentId: data.governmentId,
+      photoUrl: data.photoUrl,
+      photoFileName: data.photoFileName,
+      status: data.status,
+      submittedAt: data.submittedAt ? (data.submittedAt as Timestamp).toDate() : undefined,
+      reviewedAt: data.reviewedAt ? (data.reviewedAt as Timestamp).toDate() : undefined,
+      reviewedBy: data.reviewedBy,
+      rejectionReason: data.rejectionReason,
+    };
+    return kycResult;
   }
   return null;
 }
@@ -157,13 +172,13 @@ interface RecordTransferResult {
 export async function recordTransferAction(
   userId: string,
   transferData: LocalTransferData | InternationalTransferData,
-  authorizations: Partial<AuthorizationDetails>, 
-  platformCotPercentage?: number 
+  authorizations: Partial<AuthorizationDetails>,
+  platformCotPercentage?: number
 ): Promise<RecordTransferResult> {
   if (!userId) {
     return { success: false, message: "User ID is required for transfer." };
   }
-  
+
   const userDocSnap = await getDoc(doc(db, "users", userId));
   if (!userDocSnap.exists()) {
     return { success: false, message: "User profile not found." };
@@ -173,7 +188,7 @@ export async function recordTransferAction(
   if (userProfile.kycStatus !== 'verified') {
     return { success: false, message: "KYC verification required to perform transfers." };
   }
-  
+
   try {
     const settingsResult = await getPlatformSettingsAction();
     let cotPercentageToUse = platformCotPercentage;
@@ -213,7 +228,7 @@ export async function recordTransferAction(
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", userId);
-      const freshUserDoc = await transaction.get(userDocRef); 
+      const freshUserDoc = await transaction.get(userDocRef);
       if (!freshUserDoc.exists()) {
         throw new Error("User profile not found within transaction.");
       }
@@ -235,15 +250,15 @@ export async function recordTransferAction(
         recipientDetails.accountNumber = transferData.recipientAccountNumberIBAN;
       }
       if (transferData.bankName) recipientDetails.bankName = transferData.bankName;
-      
+
       if ('swiftBic' in transferData && transferData.swiftBic && transferData.swiftBic.trim() !== "") {
         recipientDetails.swiftBic = transferData.swiftBic;
       }
       if ('country' in transferData && transferData.country && transferData.country.trim() !== "") {
         recipientDetails.country = transferData.country;
       }
-      
-      const authDetailsToSave: Partial<AuthorizationDetails> = { 
+
+      const authDetailsToSave: Partial<AuthorizationDetails> = {
         cot: parseFloat(cotAmount.toFixed(2)),
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
@@ -255,28 +270,35 @@ export async function recordTransferAction(
         userId,
         date: Timestamp.now(),
         description: `Transfer to ${transferData.recipientName}`,
-        amount: -transferData.amount, 
+        amount: -transferData.amount,
         type: "transfer",
         status: "completed",
-        currency: 'currency' in transferData ? transferData.currency : "USD", 
+        currency: 'currency' in transferData ? transferData.currency : "USD",
         ...(Object.keys(recipientDetails).length > 0 && { recipientDetails: recipientDetails as TransactionType['recipientDetails'] }),
         ...(Object.keys(authDetailsToSave).length > 1 && { authorizationDetails: authDetailsToSave as AuthorizationDetails }),
       };
-      const transactionDocRef = doc(collection(db, "transactions")); 
-      transaction.set(transactionDocRef, newTransactionData); 
+      const transactionDocRef = doc(collection(db, "transactions"));
+      transaction.set(transactionDocRef, newTransactionData);
 
-      const firestoreBatchForCodes = writeBatch(db); 
-      if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes); 
-      if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
-      if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
-      await firestoreBatchForCodes.commit(); 
-      
+      // Mark codes as used *within the same Firestore transaction* if possible, or immediately after.
+      // For now, we'll do it after the main transaction commits, in a separate batch.
+      // This is because the markCodeAsUsed function itself does a revalidatePath which isn't ideal inside a transaction.
+      // A more robust solution would be to pass the `transaction` object to `markCodeAsUsed`.
+
       return { balance: updatedBalance, transactionId: transactionDocRef.id };
     });
 
+    // Post-transaction: Mark codes as used in a separate batch
+    const firestoreBatchForCodes = writeBatch(db);
+    if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes);
+    if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
+    if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
+    await firestoreBatchForCodes.commit();
+
+
     if (userProfile.email && transactionResult.transactionId) {
       await sendTransactionalEmail({
-        userId: userId, 
+        userId: userId,
         emailType: "TRANSFER_SUCCESS",
         data: {
           accountNumber: userProfile.accountNumber,
@@ -296,7 +318,7 @@ export async function recordTransferAction(
 
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/transactions");
-    revalidatePath(`/dashboard/profile`); 
+    revalidatePath(`/dashboard/profile`);
 
     return {
       success: true,
@@ -310,7 +332,7 @@ export async function recordTransferAction(
     const userEmailForFailure = userProfile?.email;
     if (userEmailForFailure) {
       await sendTransactionalEmail({
-        userId: userId, 
+        userId: userId,
         emailType: "TRANSFER_FAILED",
         data: {
           accountNumber: userProfile.accountNumber,
@@ -318,7 +340,7 @@ export async function recordTransferAction(
           currency: 'currency' in transferData ? transferData.currency : "USD",
           recipientName: transferData.recipientName,
           reason: error.message || "Unknown error",
-          description: `Attempted transfer to ${transferData.recipientName}`, 
+          description: `Attempted transfer to ${transferData.recipientName}`,
         },
       });
     }
@@ -346,18 +368,18 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
     if (count && count > 0) {
       queryConstraints.push(limit(count));
     }
-    
+
     q = query(transactionsColRef, ...queryConstraints);
-    
+
     const querySnapshot = await getDocs(q);
     const transactions: TransactionType[] = querySnapshot.docs.map((docSnap) => {
       const data = docSnap.data();
-      let transactionDate = new Date(); 
+      let transactionDate = new Date();
       if (data.date && typeof (data.date as Timestamp).toDate === 'function') {
         transactionDate = (data.date as Timestamp).toDate();
-      } else if (data.date instanceof Date) { 
+      } else if (data.date instanceof Date) {
         transactionDate = data.date;
-      } else if (data.date) { 
+      } else if (data.date) {
         try {
           const parsedDate = new Date(data.date as string | number);
           if (!isNaN(parsedDate.getTime())) {
@@ -373,9 +395,9 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
       }
 
       return {
-        id: docSnap.id, 
+        id: docSnap.id,
         ...data,
-        date: transactionDate, 
+        date: transactionDate,
       } as TransactionType;
     });
     return { success: true, transactions };
@@ -417,11 +439,11 @@ export async function updateUserProfileInformationAction(
       lastName,
       displayName: `${firstName} ${lastName}`,
     };
-    
-    if (phoneNumber !== undefined) { 
+
+    if (phoneNumber !== undefined) {
         updateData.phoneNumber = phoneNumber;
     }
-    
+
     await updateDoc(userDocRef, updateData);
     revalidatePath("/dashboard/profile");
 
@@ -482,10 +504,10 @@ export async function submitLoanApplicationAction(
       amount: validatedData.data.amount,
       termMonths: validatedData.data.termMonths,
       purpose: validatedData.data.purpose,
-      interestRate: 0.08, 
+      interestRate: 0.08,
       status: "pending",
       applicationDate: Timestamp.now(),
-      currency: userProfile.currency || "USD", 
+      currency: userProfile.currency || "USD",
     };
 
     const loanDocRef = await addDoc(loansColRef, newLoanDocData);
@@ -551,12 +573,12 @@ export async function submitSupportTicketAction(
       status: "open",
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-      priority: "medium", 
+      priority: "medium",
     };
 
     const ticketDocRef = await addDoc(supportTicketsColRef, newTicketData);
 
-    revalidatePath("/admin/support"); 
+    revalidatePath("/admin/support");
 
     return {
       success: true,
@@ -572,4 +594,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
