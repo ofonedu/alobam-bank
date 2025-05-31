@@ -83,7 +83,6 @@ export interface KYCData {
   reviewedAt?: Date | Timestamp;
   reviewedBy?: string;
   rejectionReason?: string;
-  // riskAssessment field removed
 }
 
 export type AuthUser = FirebaseUser & { customData?: UserProfile };
@@ -135,7 +134,6 @@ export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'
   userEmail?: string;
   submittedAt: Date; 
   reviewedAt?: Date;  
-  // riskAssessment field removed
 }
 
 
@@ -404,4 +402,5 @@ export interface AuthorizationCode {
   isUsed: boolean;
   generatedBy: string; // Admin User ID or "system"
 }
+
 

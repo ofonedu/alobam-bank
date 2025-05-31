@@ -117,7 +117,6 @@ export default function AdminKycPage() {
           reviewedAt: reviewedAtDate, // Date or undefined
           reviewedBy: rawData.reviewedBy, // Undefined if not present
           rejectionReason: rawData.rejectionReason, // Undefined if not present
-          riskAssessment: rawData.riskAssessment, // Undefined if not present
         };
 
         return {
@@ -246,3 +245,4 @@ export default function AdminKycPage() {
     
 
     
+
