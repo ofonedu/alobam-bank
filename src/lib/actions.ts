@@ -62,7 +62,9 @@ export async function submitKycAction(
         console.error("Detailed Firebase Storage Upload Error Name:", uploadError.name);
         console.error("Full Firebase Storage Upload Error Object:", JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)));
         
-        const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}`;
+        const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
+        const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}. Attempted bucket: ${targetBucket}`;
+        
         return {
           success: false,
           message: `Failed to upload ID photo. ${specificErrorMessage}`,
@@ -103,7 +105,6 @@ export async function submitKycAction(
     
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
-    // No AI risk assessment call
 
     return {
       success: true,
@@ -113,9 +114,11 @@ export async function submitKycAction(
 
   } catch (error: any) {
     console.error("Error submitting KYC:", error);
+    const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
+    const generalErrorMessage = `An unexpected error occurred during KYC submission. Attempted bucket: ${targetBucket}. Error: ${error.message}`;
     return {
       success: false,
-      message: "An unexpected error occurred during KYC submission. Please try again.",
+      message: generalErrorMessage,
       error: error.message,
     };
   }
@@ -419,10 +422,6 @@ export async function updateUserProfileInformationAction(
         updateData.phoneNumber = phoneNumber;
     }
     
-    // Remove undefined fields to avoid Firestore errors - this is implicitly handled by how updateData is constructed
-    // Object.keys(updateData).forEach(key => updateData[key as keyof typeof updateData] === undefined && delete updateData[key as keyof typeof updateData]);
-
-
     await updateDoc(userDocRef, updateData);
     revalidatePath("/dashboard/profile");
 
@@ -573,3 +572,4 @@ export async function submitSupportTicketAction(
     };
   }
 }
+
