@@ -63,7 +63,8 @@ export async function submitKycAction(
         console.error("Full Firebase Storage Upload Error Object:", JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)));
         
         const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
-        const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}. Attempted bucket: ${targetBucket}`;
+        const projectId = storage.app.options.projectId || "PROJECT_ID_NOT_CONFIGURED";
+        const specificErrorMessage = `Storage Error: ${uploadError.code || 'Unknown Code'} - ${uploadError.message || 'No specific message from storage.'}. Attempted bucket: ${targetBucket} for Project ID: ${projectId}. Please ensure Firebase Storage is enabled and configured for this project in the Firebase Console.`;
         
         return {
           success: false,
@@ -72,7 +73,6 @@ export async function submitKycAction(
         };
       }
     } else {
-      // This case should ideally be caught by Zod validation if photo is mandatory
       console.warn(`submitKycAction: No governmentIdPhoto provided or file is missing for user ${userId}.`);
        return {
           success: false,
@@ -115,7 +115,8 @@ export async function submitKycAction(
   } catch (error: any) {
     console.error("Error submitting KYC:", error);
     const targetBucket = storage.app.options.storageBucket || "NOT_CONFIGURED_IN_CLIENT_APP";
-    const generalErrorMessage = `An unexpected error occurred during KYC submission. Attempted bucket: ${targetBucket}. Error: ${error.message}`;
+    const projectId = storage.app.options.projectId || "PROJECT_ID_NOT_CONFIGURED";
+    const generalErrorMessage = `An unexpected error occurred during KYC submission. Attempted bucket: ${targetBucket} for Project ID: ${projectId}. Error: ${error.message}`;
     return {
       success: false,
       message: generalErrorMessage,
@@ -264,16 +265,15 @@ export async function recordTransferAction(
       const transactionDocRef = doc(collection(db, "transactions")); 
       transaction.set(transactionDocRef, newTransactionData); 
 
-      const firestoreBatchForCodes = writeBatch(db); // Use a separate batch or pass the transaction
-      if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes); // Pass batch to markCodeAsUsed
+      const firestoreBatchForCodes = writeBatch(db); 
+      if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes); 
       if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
       if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
-      await firestoreBatchForCodes.commit(); // Commit batch for code usage marking
+      await firestoreBatchForCodes.commit(); 
       
       return { balance: updatedBalance, transactionId: transactionDocRef.id };
     });
 
-    // Send email after successful transaction
     if (userProfile.email && transactionResult.transactionId) {
       await sendTransactionalEmail({
         userId: userId, 
@@ -418,7 +418,7 @@ export async function updateUserProfileInformationAction(
       displayName: `${firstName} ${lastName}`,
     };
     
-    if (phoneNumber !== undefined) { // Only include phoneNumber if it's explicitly provided (even if empty string)
+    if (phoneNumber !== undefined) { 
         updateData.phoneNumber = phoneNumber;
     }
     
