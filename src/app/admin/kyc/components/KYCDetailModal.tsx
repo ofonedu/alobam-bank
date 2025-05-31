@@ -94,7 +94,10 @@ export function KYCDetailModal({
     }
   };
 
-  const isValidPhotoUrl = kycItem.photoUrl && kycItem.photoUrl !== "placeholder_for_actual_storage_url" && (kycItem.photoUrl.startsWith('http') || kycItem.photoUrl.startsWith('/') || kycItem.photoUrl.startsWith('data:'));
+  const isValidPhotoUrl = typeof kycItem.photoUrl === 'string' &&
+                          kycItem.photoUrl && 
+                          kycItem.photoUrl !== "placeholder_for_actual_storage_url" && 
+                          (kycItem.photoUrl.startsWith('http') || kycItem.photoUrl.startsWith('/') || kycItem.photoUrl.startsWith('data:'));
 
 
   return (
@@ -122,7 +125,7 @@ export function KYCDetailModal({
               </Label>
               {isValidPhotoUrl ? (
                  <div className="relative aspect-video w-full rounded-md border border-dashed overflow-hidden">
-                    <Image src={kycItem.photoUrl} alt={`ID Photo for ${kycItem.fullName}`} fill className="object-contain" data-ai-hint="document identification" />
+                    <Image src={kycItem.photoUrl!} alt={`ID Photo for ${kycItem.fullName}`} fill className="object-contain" data-ai-hint="document identification" />
                 </div>
               ) : (
                 <div className="aspect-video w-full rounded-md border border-dashed flex items-center justify-center bg-muted">
@@ -143,9 +146,6 @@ export function KYCDetailModal({
                 </Badge>
             </div>
 
-             {/* Conditional rendering for AI Risk Assessment (removed as per previous request) */}
-             {/* If AI Risk was to be shown, it would be here, checking for kycItem.riskAssessment */}
-             {/* For now, we can add a simple placeholder or note about manual review */}
             <Alert className="mt-4">
                 <AlertOctagon className="h-4 w-4" />
                 <AlertTitle>Manual Review Required</AlertTitle>
