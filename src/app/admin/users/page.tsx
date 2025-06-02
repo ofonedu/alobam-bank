@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PlusCircle, Search, Eye, DollarSign, UserCog, UserX, Loader2, AlertTriangle, PlayCircle } from "lucide-react";
+import { PlusCircle, Search, Eye, DollarSign, UserCog, UserX, Loader2, AlertTriangle, PlayCircle, Trash2 } from "lucide-react"; // Added Trash2
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { AdminUserView } from "@/types"; 
@@ -14,7 +14,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AdminUserRoleDialog } from "./components/admin-user-role-dialog";
 import { AdjustBalanceDialog } from "./components/adjust-balance-dialog"; 
 import { ViewUserDetailModal } from "./components/ViewUserDetailModal";
-import { updateUserSuspensionStatusAction } from "@/lib/actions/admin-actions"; 
+import { DeleteUserConfirmationDialog } from "./components/delete-user-confirmation-dialog"; // Added import
+import { updateUserSuspensionStatusAction, deleteUserAccountAction } from "@/lib/actions/admin-actions"; // Added deleteUserAccountAction
 import { useToast } from "@/hooks/use-toast";
 
 
@@ -61,6 +62,8 @@ export default function AdminUsersPage() {
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<AdminUserView | null>(null);
 
   const [suspendingUserId, setSuspendingUserId] = useState<string | null>(null); 
+  const [isDeleteUserDialogOpen, setIsDeleteUserDialogOpen] = useState(false);
+  const [selectedUserForDeletion, setSelectedUserForDeletion] = useState<AdminUserView | null>(null);
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -130,6 +133,24 @@ export default function AdminUsersPage() {
     } finally {
       setSuspendingUserId(null);
     }
+  };
+
+  const handleOpenDeleteDialog = (user: AdminUserView) => {
+    setSelectedUserForDeletion(user);
+    setIsDeleteUserDialogOpen(true);
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!selectedUserForDeletion?.uid) return;
+    const result = await deleteUserAccountAction(selectedUserForDeletion.uid);
+    if (result.success) {
+      toast({ title: "User Profile Deleted", description: result.message });
+      fetchUsers();
+    } else {
+      toast({ title: "Deletion Failed", description: result.message || "Could not delete user profile.", variant: "destructive" });
+    }
+    setIsDeleteUserDialogOpen(false);
+    setSelectedUserForDeletion(null);
   };
 
 
@@ -225,7 +246,6 @@ export default function AdminUsersPage() {
                             <Button variant="ghost" size="icon" title="Adjust Balance" onClick={() => handleOpenBalanceDialog(user)}>
                               <DollarSign className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" title="Manage KYC" disabled><UserCog className="h-4 w-4" /></Button> {/* Consider a different icon for KYC if UserCog is for role */}
                             <Button 
                             variant="ghost" 
                             size="icon" 
@@ -240,6 +260,9 @@ export default function AdminUsersPage() {
                             ) : (
                                 <UserX className="h-4 w-4 text-destructive" />
                             )}
+                            </Button>
+                            <Button variant="ghost" size="icon" title="Delete User Profile" onClick={() => handleOpenDeleteDialog(user)} className="text-destructive hover:text-destructive/90">
+                                <Trash2 className="h-4 w-4" />
                             </Button>
                         </div>
                       </TableCell>
@@ -275,7 +298,17 @@ export default function AdminUsersPage() {
             user={selectedUserForDetail}
         />
       )}
+      {selectedUserForDeletion && (
+        <DeleteUserConfirmationDialog
+          isOpen={isDeleteUserDialogOpen}
+          onOpenChange={setIsDeleteUserDialogOpen}
+          user={selectedUserForDeletion}
+          onConfirmDelete={handleConfirmDeleteUser}
+        />
+      )}
     </div>
   );
 }
 
+
+    

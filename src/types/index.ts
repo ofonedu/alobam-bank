@@ -417,7 +417,6 @@ export interface AuthorizationCode {
   generatedBy: string; 
 }
 
-// Email Service Types
 export enum EmailType {
   WELCOME = "WELCOME",
   PASSWORD_RESET = "PASSWORD_RESET",
@@ -496,3 +495,12 @@ export interface NotificationData {
   adminNotificationMessage?: string;
   adminNotificationSubject?: string;
 }
+
+export interface DeleteUserDialogProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  user: AdminUserView | null;
+  onConfirmDelete: () => void;
+}
+
+    

@@ -17,10 +17,11 @@ import {
   where,
   getCountFromServer,
   setDoc,
+  deleteDoc, // Added deleteDoc
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { AdminAddUserSchema } from "../schemas";
-import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { createUserWithEmailAndPassword, deleteUser as deleteAuthUser } from "firebase/auth"; // Renamed deleteUser to deleteAuthUser
 import { getRandomName } from "../utils";
 
 
@@ -257,8 +258,12 @@ export async function generateRandomTransactionsAction(
 
     for (let i = 0; i < count; i++) {
       const randomDate = new Date();
-      randomDate.setDate(randomDate.getDate() - Math.floor(Math.random() * 90)); 
-      randomDate.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60), Math.floor(Math.random() * 60));
+      // Make transactions very recent, e.g., within the last 24 hours
+      const hoursAgo = Math.floor(Math.random() * 24);
+      randomDate.setHours(randomDate.getHours() - hoursAgo);
+      randomDate.setMinutes(Math.floor(Math.random() * 60));
+      randomDate.setSeconds(Math.floor(Math.random() * 60));
+
 
       let amount;
       if (targetNetValue !== undefined && targetNetValue !== null) {
@@ -570,7 +575,7 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     console.error("Error in adminAddUserAction:", error);
     if (newAuthUser && newAuthUser.delete) { 
       try {
-        await deleteUser(newAuthUser); 
+        await deleteAuthUser(newAuthUser); 
       } catch (deleteError) {
         console.error("AdminAddUserAction: CRITICAL - Failed to roll back Firebase Auth user:", deleteError);
       }
@@ -584,3 +589,56 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     return { success: false, message: errorMessage, error: error.message };
   }
 }
+
+// --- User Deletion Action ---
+interface DeleteUserAccountResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export async function deleteUserAccountAction(userId: string): Promise<DeleteUserAccountResult> {
+  if (!userId) {
+    return { success: false, message: "User ID is required for deletion." };
+  }
+
+  try {
+    const batch = writeBatch(db);
+
+    // Delete user profile from 'users' collection
+    const userProfileRef = doc(db, "users", userId);
+    batch.delete(userProfileRef);
+
+    // Delete user's KYC data from 'kycData' collection (document ID is userId)
+    const kycDataRef = doc(db, "kycData", userId);
+    const kycDocSnap = await getDoc(kycDataRef); // Check if it exists before trying to delete
+    if (kycDocSnap.exists()) {
+      batch.delete(kycDataRef);
+    }
+
+    // TODO: Consider deleting user's transactions, loans, etc.
+    // For now, these will be orphaned but this action focuses on unblocking email registration.
+    // Example:
+    // const transactionsQuery = query(collection(db, "transactions"), where("userId", "==", userId));
+    // const transactionsSnapshot = await getDocs(transactionsQuery);
+    // transactionsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+    await batch.commit();
+
+    revalidatePath("/admin/users");
+
+    return {
+      success: true,
+      message: `User profile (ID: ${userId}) and associated KYC data deleted from Firestore successfully. Firebase Auth record must be deleted separately.`,
+    };
+  } catch (error: any) {
+    console.error(`Error deleting user data for UID ${userId} from Firestore:`, error);
+    return {
+      success: false,
+      message: "Failed to delete user data from Firestore.",
+      error: error.message,
+    };
+  }
+}
+
+    
