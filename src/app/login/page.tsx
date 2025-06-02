@@ -44,7 +44,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader>
           <CardTitle className="text-2xl">Sign In</CardTitle>
-          <CardDescription>Enter your credentials to access your VerifAI account.</CardDescription>
+          <CardDescription>Enter your credentials to access your Wohana account.</CardDescription>
         </CardHeader>
         <CardContent>
           <AuthForm onSubmit={handleLogin} />
@@ -59,3 +59,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
