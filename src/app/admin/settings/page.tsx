@@ -39,6 +39,8 @@ export default function AdminSettingsPage() {
       requireTaxClearance: false,
       platformLogoText: "Wohana Funds",
       platformLogoIcon: "ShieldCheck",
+      resendApiKey: "",
+      resendFromEmail: "",
     },
   });
   const kycForm = useForm<KycSettingsFormData>({
@@ -66,6 +68,8 @@ export default function AdminSettingsPage() {
           requireTaxClearance: result.settings.requireTaxClearance || false,
           platformLogoText: result.settings.platformLogoText || "Wohana Funds",
           platformLogoIcon: result.settings.platformLogoIcon || "ShieldCheck",
+          resendApiKey: result.settings.resendApiKey || "",
+          resendFromEmail: result.settings.resendFromEmail || "",
         });
         kycForm.reset({
           autoApproveKycRiskLevel: result.settings.autoApproveKycRiskLevel || "none",
@@ -89,7 +93,7 @@ export default function AdminSettingsPage() {
     const result = await updatePlatformSettingsAction(data);
     if (result.success) {
       toast({ title: "Success", description: `${section} settings saved.` });
-      if (section === "General & Platform" || section === "Transfer Authorization") { // Reload if logo or core platform settings change
+      if (section === "General & Platform" || section === "Transfer Authorization" || section === "Email (Resend)") { // Reload if logo or core platform settings change
         // Consider more granular updates or context instead of full reload for better UX
         // For now, reload is simple and ensures all parts of the app get the new settings.
         window.location.reload(); 
@@ -100,7 +104,7 @@ export default function AdminSettingsPage() {
     savingSetter(false);
   };
 
-  const onGeneralSubmit = (data: GeneralSettingsFormData) => handleSave(data, setIsSavingGeneral, "General & Platform");
+  const onGeneralSubmit = (data: GeneralSettingsFormData) => handleSave(data, setIsSavingGeneral, "General, Transfer & Email");
   const onKycSubmit = (data: KycSettingsFormData) => handleSave(data, setIsSavingKyc, "KYC");
   const onLoanSubmit = (data: LoanSettingsFormData) => handleSave(data, setIsSavingLoan, "Loan");
 
@@ -286,10 +290,43 @@ export default function AdminSettingsPage() {
                     />
                 </div>
             </CardContent>
-             <CardContent> {/* Separated for the button to be outside the grid and at the bottom of the combined form section */}
+          </Card>
+
+           <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Email (Resend) Settings</CardTitle>
+              <CardDescription>Configure Resend API for sending transactional emails. Remember to verify your sending domain in Resend.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <FormField
+                control={generalForm.control}
+                name="resendApiKey"
+                render={({ field }) => (
+                  <FormItem>
+                    <Label htmlFor="resendApiKey">Resend API Key</Label>
+                    <FormControl><Input id="resendApiKey" type="password" placeholder="re_xxxxxxxxxxxxxxx" {...field} /></FormControl>
+                    <FormDescription>Your API key from Resend dashboard.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={generalForm.control}
+                name="resendFromEmail"
+                render={({ field }) => (
+                  <FormItem>
+                    <Label htmlFor="resendFromEmail">"From" Email Address</Label>
+                    <FormControl><Input id="resendFromEmail" type="email" placeholder="noreply@yourdomain.com" {...field} /></FormControl>
+                    <FormDescription>The email address emails will be sent from (must be verified in Resend).</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+             <CardContent> 
                 <Button type="submit" disabled={isSavingGeneral}>
                     {isSavingGeneral ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save General & Transfer Settings
+                    Save General, Transfer & Email Settings
                 </Button>
             </CardContent>
           </Card>
@@ -310,6 +347,11 @@ export default function AdminSettingsPage() {
              <Button asChild variant="outline">
                 <Link href="/admin/settings/account-types" className="flex items-center gap-2">
                     <ListPlus className="h-4 w-4" /> Manage Account Types
+                </Link>
+            </Button>
+             <Button asChild variant="outline">
+                <Link href="/admin/settings/email-templates" className="flex items-center gap-2">
+                    <Mail className="h-4 w-4" /> Email Templates (Placeholder)
                 </Link>
             </Button>
         </CardContent>

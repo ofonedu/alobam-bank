@@ -132,6 +132,9 @@ export const GeneralSettingsSchema = z.object({
   requireTaxClearance: z.boolean().optional(),
   platformLogoText: z.string().min(1, "Logo text cannot be empty if provided.").max(30, "Logo text too long.").optional().or(z.literal('')),
   platformLogoIcon: z.string().min(1, "Icon name cannot be empty if provided.").max(50, "Icon name too long.").optional().or(z.literal('')),
+  // Resend specific settings
+  resendApiKey: z.string().min(1, "Resend API Key is required if Resend is enabled.").optional().or(z.literal('')),
+  resendFromEmail: z.string().email("Invalid 'From' email address for Resend.").optional().or(z.literal('')),
 });
 export type GeneralSettingsFormData = z.infer<typeof GeneralSettingsSchema>;
 

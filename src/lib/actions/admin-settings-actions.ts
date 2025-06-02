@@ -110,8 +110,8 @@ export async function getPlatformSettingsAction(): Promise<PlatformSettingsResul
         }
         // If no settings document exists, return default (empty) settings
         const defaultSettings: PlatformSettings = {
-            platformName: "Wohana Funds", // Default if not set
-            supportEmail: "support@example.com", // Default
+            platformName: "Wohana Funds", 
+            supportEmail: "support@example.com", 
             maintenanceMode: false,
             cotPercentage: 0.01,
             requireCOTConfirmation: false,
@@ -119,6 +119,8 @@ export async function getPlatformSettingsAction(): Promise<PlatformSettingsResul
             requireTaxClearance: false,
             platformLogoText: "Wohana Funds",
             platformLogoIcon: "ShieldCheck",
+            resendApiKey: "",
+            resendFromEmail: "",
         };
         return { success: true, settings: defaultSettings }; 
     } catch (error: any) {
@@ -133,10 +135,9 @@ export async function updatePlatformSettingsAction(
     try {
         const settingsDocRef = doc(db, "settings", "platformConfig");
         await setDoc(settingsDocRef, settings, { merge: true });
-        revalidatePath("/admin/settings", "layout"); // Revalidate settings page and potentially layout
-        revalidatePath("/", "layout"); // Revalidate home page and layout
+        revalidatePath("/admin/settings", "layout"); 
+        revalidatePath("/", "layout"); 
         
-        // Only revalidate AppLogo related paths if logo settings actually changed.
         if (settings.platformLogoText !== undefined || settings.platformLogoIcon !== undefined) {
             revalidatePath("/components/layout/AppLogo", "layout"); 
         }
@@ -291,7 +292,3 @@ export async function updateLandingPageSectionAction(
     return { success: false, message: `Failed to update ${sectionKey}.`, error: error.message };
   }
 }
-
-// Removed getAllEmailTemplatesAction and updateEmailTemplateAction
-
-    

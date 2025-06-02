@@ -6,7 +6,7 @@ import type { z } from "zod";
 import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas"; 
 // KYCSubmissionResult removed from here, will be defined with ClientKYCData
 import type React from 'react';
-import type { ReactNode } from 'react'; // Added ReactNode import
+import type { ReactNode } from 'react'; 
 
 export interface UserProfile {
   uid: string;
@@ -17,12 +17,11 @@ export interface UserProfile {
   photoURL?: string | null;
   phoneNumber?: string;
   accountType?: string;
-  currency?: string; // This is the primary currency for the user
-  balances?: Record<string, number>; // e.g., { "USD": 1000, "EUR": 500 }
-  primaryCurrency?: string; // e.g., "USD"
+  currency?: string; 
+  balances?: Record<string, number>; 
+  primaryCurrency?: string; 
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
-  // balance: number; // This should be derived from balances[primaryCurrency]
   accountNumber?: string;
   isFlagged?: boolean;
   accountHealthScore?: number;
@@ -82,22 +81,21 @@ export interface KYCData {
   photoUrl?: string;
   photoFileName?: string;
   status: "not_started" | "pending_review" | "verified" | "rejected";
-  submittedAt?: Date | Timestamp; // For Firestore and server-side logic
-  reviewedAt?: Date | Timestamp;  // For Firestore and server-side logic
+  submittedAt?: Date | Timestamp; 
+  reviewedAt?: Date | Timestamp;  
   reviewedBy?: string;
   rejectionReason?: string;
 }
 
-// Client-side representation of KYCData where dates are strings
 export interface ClientKYCData extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
-  submittedAt?: string; // ISO string
-  reviewedAt?: string;  // ISO string
+  submittedAt?: string; 
+  reviewedAt?: string;  
 }
 
 export interface KYCSubmissionResult {
   success: boolean;
   message: string;
-  kycData?: ClientKYCData; // Use ClientKYCData for action result
+  kycData?: ClientKYCData; 
   error?: string | Record<string, string[]>;
 }
 
@@ -149,8 +147,8 @@ export interface AccountType {
 export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
   id: string;
   userEmail?: string;
-  submittedAt: Date; // Already converted to Date in admin page fetch
-  reviewedAt?: Date;  // Already converted to Date in admin page fetch
+  submittedAt: Date; 
+  reviewedAt?: Date;  
 }
 
 
@@ -168,7 +166,9 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
-  // Removed Resend and Brevo specific fields
+  // Resend specific settings
+  resendApiKey?: string;
+  resendFromEmail?: string;
 }
 
 // Landing Page Content Types
@@ -414,11 +414,9 @@ export interface AuthorizationCode {
   id: string;
   value: string;
   type: 'COT' | 'IMF' | 'TAX';
-  userId?: string | null; // Allow null for Firestore compatibility
+  userId?: string | null; 
   createdAt: Timestamp;
   expiresAt?: Timestamp;
   isUsed: boolean;
-  generatedBy: string; // Admin User ID or "system"
+  generatedBy: string; 
 }
-
-    
