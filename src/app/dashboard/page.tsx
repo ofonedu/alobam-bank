@@ -271,7 +271,7 @@ export default function DashboardPage() {
                 <Activity className="h-5 w-5 text-primary" />
                 Funds Flow Overview
             </CardTitle>
-            <CardDescription>Your income vs. expenses for the last 3 months (mock data).</CardDescription>
+            <CardDescription>Your income vs. expenses for the last 3 months.</CardDescription>
           </CardHeader>
           <CardContent className="aspect-[16/9] sm:aspect-[2/1]">
             <ChartContainer config={chartConfig} className="h-full w-full">
