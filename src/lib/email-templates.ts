@@ -9,39 +9,31 @@ interface EmailLayoutProps {
 }
 
 const EmailLayout: React.FC<EmailLayoutProps> = ({ children, platformName, previewText }) => (
-  <html lang="en">
-    <head>
-      <meta charSet="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>{platformName} Notification</title>
-      <style>{`
-        body { margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .header { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eeeeee; }
-        .header h1 { color: #002147; margin:0; font-size: 24px; }
-        .content { padding: 20px 0; color: #333333; line-height: 1.6; }
-        .content p { margin: 0 0 10px; }
-        .button { display: inline-block; padding: 10px 20px; background-color: #FFD700; color: #002147; text-decoration: none; border-radius: 5px; font-weight: bold; }
-        .footer { text-align: center; padding-top: 20px; border-top: 1px solid #eeeeee; font-size: 12px; color: #777777; }
-        .preview-text { display: none; max-height: 0; overflow: hidden; }
-      `}</style>
-    </head>
-    <body>
-      {previewText && <div className="preview-text">{previewText}</div>}
-      <div className="container">
-        <div className="header">
-          <h1>{platformName}</h1>
-        </div>
-        <div className="content">
-          {children}
-        </div>
-        <div className="footer">
-          <p>&copy; {new Date().getFullYear()} {platformName}. All rights reserved.</p>
-          <p>If you did not request this email, please ignore it.</p>
-        </div>
+  <div style={{ margin: '0', padding: '0', backgroundColor: '#f4f4f4', fontFamily: 'Arial, sans-serif' }}>
+    {previewText && <div style={{ display: 'none', maxHeight: 0, overflow: 'hidden' }}>{previewText}</div>}
+    <style>{`
+      body { margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif; }
+      .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+      .header { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eeeeee; }
+      .header h1 { color: #002147; margin:0; font-size: 24px; }
+      .content { padding: 20px 0; color: #333333; line-height: 1.6; }
+      .content p { margin: 0 0 10px; }
+      .button { display: inline-block; padding: 10px 20px; background-color: #FFD700; color: #002147; text-decoration: none; border-radius: 5px; font-weight: bold; }
+      .footer { text-align: center; padding-top: 20px; border-top: 1px solid #eeeeee; font-size: 12px; color: #777777; }
+    `}</style>
+    <div className="container" style={{ maxWidth: '600px', margin: '20px auto', backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', boxShadow: '0 0 10px rgba(0,0,0,0.1)' }}>
+      <div className="header" style={{ textAlign: 'center', paddingBottom: '20px', borderBottom: '1px solid #eeeeee' }}>
+        <h1 style={{ color: '#002147', margin: '0', fontSize: '24px' }}>{platformName}</h1>
       </div>
-    </body>
-  </html>
+      <div className="content" style={{ padding: '20px 0', color: '#333333', lineHeight: 1.6 }}>
+        {children}
+      </div>
+      <div className="footer" style={{ textAlign: 'center', paddingTop: '20px', borderTop: '1px solid #eeeeee', fontSize: '12px', color: '#777777' }}>
+        <p>&copy; {new Date().getFullYear()} {platformName}. All rights reserved.</p>
+        <p>If you did not request this email, please ignore it.</p>
+      </div>
+    </div>
+  </div>
 );
 
 
@@ -57,7 +49,7 @@ export const WelcomeEmail: React.FC<WelcomeEmailProps> = ({ userName, loginLink,
     <p>Welcome to {platformName}! We're thrilled to have you join our community. Get started by exploring your new account and the features we offer.</p>
     <p>To log in to your account, please click the button below:</p>
     <p style={{ textAlign: 'center', margin: '20px 0' }}>
-      <a href={loginLink} className="button">Log In to Your Account</a>
+      <a href={loginLink} className="button" style={{ display: 'inline-block', padding: '10px 20px', backgroundColor: '#FFD700', color: '#002147', textDecoration: 'none', borderRadius: '5px', fontWeight: 'bold' }}>Log In to Your Account</a>
     </p>
     <p>If you have any questions, feel free to contact our support team.</p>
     <p>Best regards,<br />The {platformName} Team</p>
@@ -76,7 +68,7 @@ export const PasswordResetEmail: React.FC<PasswordResetEmailProps> = ({ userName
     <p>We received a request to reset your password for your {platformName} account. If you did not make this request, please ignore this email.</p>
     <p>To reset your password, click the link below:</p>
     <p style={{ textAlign: 'center', margin: '20px 0' }}>
-      <a href={resetLink} className="button">Reset Your Password</a>
+      <a href={resetLink} className="button" style={{ display: 'inline-block', padding: '10px 20px', backgroundColor: '#FFD700', color: '#002147', textDecoration: 'none', borderRadius: '5px', fontWeight: 'bold' }}>Reset Your Password</a>
     </p>
     <p>This link will expire in 1 hour for security reasons.</p>
     <p>If you're having trouble clicking the password reset button, copy and paste the URL below into your web browser:</p>
