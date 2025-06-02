@@ -19,7 +19,6 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
-// Removed import { sendTransactionalEmail } from "../email-service";
 import { AdminAddUserSchema } from "../schemas";
 import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { getRandomName } from "../utils";
@@ -148,7 +147,7 @@ export async function issueManualAdjustmentAction(
 ): Promise<ManualAdjustmentResult> {
   console.log(`issueManualAdjustmentAction: Called for user ${targetUserId}, amount ${amount}, type ${type}, currency ${currency}, desc: ${description}`);
   if (!targetUserId || !amount || !description || !currency) {
-    console.error("issueManualAdjustmentAction: Missing required fields.");
+    console.error("issueManualAdjustmentAction: Missing required fields (User ID, Amount, Description, Currency).");
     return { success: false, message: "Missing required fields for manual adjustment (User ID, Amount, Description, Currency)." };
   }
   if (amount <= 0) {
@@ -175,6 +174,7 @@ export async function issueManualAdjustmentAction(
       
       userProfileData = userDoc.data() as UserProfile;
       console.log("issueManualAdjustmentAction: User profile found:", userProfileData.displayName);
+      
       const currentBalances = userProfileData.balances || {};
       const balanceForCurrency = currentBalances[currency] || 0;
       console.log(`issueManualAdjustmentAction: Current balance for ${currency}: ${balanceForCurrency}`);
@@ -190,7 +190,6 @@ export async function issueManualAdjustmentAction(
       console.log("issueManualAdjustmentAction: Updating user doc with new balances:", newBalances);
       transaction.update(userDocRef, { balances: newBalances });
 
-      const transactionsColRef = collection(db, "transactions");
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
         date: Timestamp.now(),
@@ -208,8 +207,6 @@ export async function issueManualAdjustmentAction(
     });
     
     console.log("issueManualAdjustmentAction: Transaction successful. Result:", transactionResult);
-    // Removed email sending logic
-    // console.log("issueManualAdjustmentAction: Debit/Credit notification email sending skipped.");
 
     revalidatePath("/admin/financial-ops");
     revalidatePath("/admin/transactions"); 
@@ -272,14 +269,14 @@ export async function generateRandomTransactionsAction(
     }
     const userProfileData = userDocSnap.data() as UserProfile;
     const userCurrency = userProfileData.primaryCurrency || "USD";
-    let currentBalanceForCurrency = (userProfileData.balances || {})[userCurrency] || 0;
-    console.log(`generateRandomTransactionsAction: Starting for user ${userProfileData.displayName || targetUserId}. Initial balance for ${userCurrency}: ${currentBalanceForCurrency}. Target Net Value: ${targetNetValue}`);
+    const initialBalanceForCurrency = (userProfileData.balances || {})[userCurrency] || 0;
+    console.log(`generateRandomTransactionsAction: Starting for user ${userProfileData.displayName || targetUserId}. Initial balance for ${userCurrency}: ${initialBalanceForCurrency}. Target Net Value: ${targetNetValue}`);
 
     const batch = writeBatch(db);
     const transactionsColRef = collection(db, "transactions");
 
-    let totalAmountForCompleted = 0;
-    const generatedTransactions: Array<Omit<TransactionType, "id" | "date"> & { date: Timestamp }> = [];
+    let cumulativeAmountForCompletedTx = 0;
+    const generatedTransactionsData: Array<Omit<TransactionType, "id" | "date"> & { date: Timestamp }> = [];
 
     for (let i = 0; i < count; i++) {
       const randomDate = new Date();
@@ -293,14 +290,14 @@ export async function generateRandomTransactionsAction(
         const remainingTransactions = count - i;
         let idealAmountPerTx = 0;
         if (remainingTransactions > 0) {
-            idealAmountPerTx = (targetNetValue - totalAmountForCompleted) / remainingTransactions;
+            idealAmountPerTx = (targetNetValue - cumulativeAmountForCompletedTx) / remainingTransactions;
         }
         
         const randomFactor = (Math.random() * 0.6) + 0.7; 
         amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
         
         if (i === count - 1) { 
-            amount = parseFloat((targetNetValue - totalAmountForCompleted).toFixed(2));
+            amount = parseFloat((targetNetValue - cumulativeAmountForCompletedTx).toFixed(2));
         }
         
         const maxReasonableTxAmount = targetNetValue === 0 ? 500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * 1.5;
@@ -354,25 +351,27 @@ export async function generateRandomTransactionsAction(
         isFlagged: Math.random() < 0.05, 
       };
       console.log(`generateRandomTransactionsAction: Generated tx ${i+1}/${count}: Amount: ${transactionData.amount}, Type: ${transactionData.type}, Status: ${transactionData.status}, Currency: ${transactionData.currency}`);
-      generatedTransactions.push(transactionData);
+      generatedTransactionsData.push(transactionData);
 
       if (status === 'completed') { 
-        totalAmountForCompleted += amount;
-        console.log(`generateRandomTransactionsAction: Tx ${i+1} is 'completed'. totalAmountForCompleted updated to: ${totalAmountForCompleted.toFixed(2)}`);
+        cumulativeAmountForCompletedTx += amount;
+        console.log(`generateRandomTransactionsAction: Tx ${i+1} is 'completed'. cumulativeAmountForCompletedTx updated to: ${cumulativeAmountForCompletedTx.toFixed(2)}`);
       }
     }
     
-    console.log(`generateRandomTransactionsAction: Loop finished. Total amount for 'completed' transactions: ${totalAmountForCompleted.toFixed(2)}`);
-    const newBalanceForCurrency = parseFloat((currentBalanceForCurrency + totalAmountForCompleted).toFixed(2));
-    const updatedBalances = { ...(userProfileData.balances || {}), [userCurrency]: newBalanceForCurrency };
-    console.log(`generateRandomTransactionsAction: Calculated new balance for ${userCurrency}: ${newBalanceForCurrency}. Updating user doc with balances:`, updatedBalances);
+    console.log(`generateRandomTransactionsAction: Loop finished. Total amount for 'completed' transactions: ${cumulativeAmountForCompletedTx.toFixed(2)}`);
+    
+    const finalBalanceForCurrency = parseFloat((initialBalanceForCurrency + cumulativeAmountForCompletedTx).toFixed(2));
+    const updatedBalances = { ...(userProfileData.balances || {}), [userCurrency]: finalBalanceForCurrency };
+    
+    console.log(`generateRandomTransactionsAction: Calculated new balance for ${userCurrency}: ${finalBalanceForCurrency}. Updating user doc with balances:`, updatedBalances);
     batch.update(userDocRef, { balances: updatedBalances });
 
-    generatedTransactions.forEach(txData => {
+    generatedTransactionsData.forEach(txData => {
         const newTransactionRef = doc(collection(db, "transactions")); 
         batch.set(newTransactionRef, txData);
     });
-    console.log(`generateRandomTransactionsAction: Added ${generatedTransactions.length} transaction sets to batch.`);
+    console.log(`generateRandomTransactionsAction: Added ${generatedTransactionsData.length} transaction sets to batch.`);
     
     console.log(`generateRandomTransactionsAction: Committing batch...`);
     await batch.commit();
@@ -386,7 +385,7 @@ export async function generateRandomTransactionsAction(
 
     return { 
       success: true, 
-      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance for ${userCurrency} updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} to ${userCurrency} ${newBalanceForCurrency.toFixed(2)}.`, 
+      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance for ${userCurrency} updated by ${userCurrency} ${cumulativeAmountForCompletedTx.toFixed(2)} to ${userCurrency} ${finalBalanceForCurrency.toFixed(2)}.`, 
       count 
     };
   } catch (error: any) {
@@ -457,9 +456,6 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
     
-    // Removed email sending logic
-    // console.log("approveKycAction: KYC approved email sending skipped.");
-
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
     revalidatePath("/admin/users"); 
@@ -491,9 +487,6 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
 
-    // Removed email sending logic
-    // console.log("rejectKycAction: KYC rejected email sending skipped.");
-
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
     revalidatePath("/admin/users");
@@ -513,7 +506,6 @@ interface TransactionActionResult {
 export async function markTransactionAsCompletedAction(
   transactionId: string,
   userId: string,
-  // amount: number // Amount is fetched from transactionData now
 ): Promise<TransactionActionResult> {
   if (!transactionId || !userId) {
     return { success: false, message: "Transaction ID and User ID are required." };
@@ -625,9 +617,6 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
 
     await setDoc(userDocRef, newUserProfileData);
     console.log("adminAddUserAction: Firestore profile created successfully for UID:", uid);
-    
-    // Removed email sending logic
-    // console.log("adminAddUserAction: Welcome email sending skipped.");
     
     revalidatePath("/admin/users");
     return { success: true, message: "User created successfully.", userId: uid };
