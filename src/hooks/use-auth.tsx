@@ -16,7 +16,7 @@ import {
   deleteUser
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { EmailType, type AuthUser, type UserProfile } from "@/types"; // Corrected EmailType import
+import { type AuthUser, type UserProfile } from "@/types"; 
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
@@ -206,17 +206,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log(`signUp: Preparing to send welcome email to: ${newUser.email}`);
         const emailPayload = {
           userName: constructedDisplayName || "Valued User",
-          loginLink: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`, // Use /dashboard as a generic login landing
+          loginLink: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
         };
         
         try {
-          // Ensure EmailType is correctly referenced here
-          const { subject, template } = await getEmailTemplateAndSubject(EmailType.WELCOME, emailPayload);
+          const { subject, template } = await getEmailTemplateAndSubject(
+            "WELCOME", // Use string literal
+            emailPayload
+          );
           
           if (template) {
             console.log(`signUp: Attempting to send welcome email. Subject: "${subject}"`);
-            // No need to await sendTransactionalEmail if we don't want signup to hang on it
-            // Fire and forget, but log the outcome.
             sendTransactionalEmail({ to: newUser.email, subject, reactElement: template })
               .then(emailResult => {
                 if (emailResult.success) {
@@ -229,7 +229,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 console.error(`Exception sending welcome email to ${newUser.email}:`, emailError);
               });
           } else {
-              console.warn(`signUp: Welcome email template not found for type ${EmailType.WELCOME}.`);
+              console.warn(`signUp: Welcome email template not found for type "WELCOME".`);
           }
         } catch (emailError: any) {
             console.error(`Exception preparing welcome email content for ${newUser.email}:`, emailError.message, emailError);
@@ -242,8 +242,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
       setLoading(false);
       console.error("signUp: Overall signup error for:", data.email, error.code, error.message);
-      // If newUser was created but another error occurred (other than email-already-in-use or Firestore issues handled above)
-      // attempt to delete the auth user to prevent orphaned accounts.
       if (newUser && error.code !== 'auth/email-already-in-use' && !error.message.includes("Firestore")) {
          console.warn("signUp: Attempting to delete Firebase Auth user due to an error after creation but before Firestore (or non-Firestore error). UID:", newUser.uid);
          try {
@@ -253,12 +251,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.error("signUp: CRITICAL - Failed to delete Firebase Auth user. Orphaned Auth user may exist. UID:", newUser.uid, deleteError);
           }
       }
-      throw error; // Re-throw the error to be handled by the caller (RegisterPage)
+      throw error; 
     }
   };
 
   const changeUserPassword = async (data: ChangePasswordFormData): Promise<{ success: boolean; message: string }> => {
-    const currentUser = auth.currentUser; // Get current user directly from auth
+    const currentUser = auth.currentUser; 
     if (!currentUser || !currentUser.email) {
       return { success: false, message: "User not authenticated or email missing." };
     }
@@ -292,7 +290,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Error signing out:", error);
       toast({ title: "Sign Out Failed", description: "Could not sign out. Please try again.", variant: "destructive" });
-      throw error; // Re-throw to allow caller to handle if needed
+      throw error; 
     } finally {
       setLoading(false);
     }
@@ -312,5 +310,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    

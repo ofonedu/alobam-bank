@@ -3,13 +3,14 @@
 "use server";
 
 import { Resend } from 'resend';
-import type { EmailType, EmailServiceDataPayload, EmailServiceResult, PlatformSettings } from '@/types';
+import type { EmailServiceDataPayload, EmailServiceResult, PlatformSettings } from '@/types'; // EmailType is defined in types
+import { EmailType } from '@/types'; // Import EmailType as a value if needed elsewhere, or rely on string for getEmailTemplateAndSubject
 import { getPlatformSettingsAction } from './actions/admin-settings-actions';
-import * as emailTemplates from './email-templates.tsx'; // Corrected import
+import * as emailTemplates from './email-templates'; 
 
 let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
-let resendInitialized = false; // Track initialization status
+let resendInitialized = false; 
 
 async function initializeResendClient(): Promise<boolean> {
   if (resendInitialized && resend && fromEmailAddress) {
@@ -19,11 +20,18 @@ async function initializeResendClient(): Promise<boolean> {
 
   console.log("Attempting to initialize Resend client...");
   try {
-    const settingsResult = await getPlatformSettingsAction(); // Ensure this is awaited
+    const settingsResult = await getPlatformSettingsAction(); 
 
     if (settingsResult.success && settingsResult.settings) {
       const apiKey = settingsResult.settings.resendApiKey;
       const fromEmail = settingsResult.settings.resendFromEmail;
+
+      if (!apiKey) {
+        console.error("Resend client initialization failed: Resend API Key is MISSING from settings.");
+      }
+      if (!fromEmail) {
+        console.error("Resend client initialization failed: Resend From Email is MISSING from settings.");
+      }
 
       if (apiKey && fromEmail) {
         resend = new Resend(apiKey);
@@ -32,9 +40,6 @@ async function initializeResendClient(): Promise<boolean> {
         console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}`);
         return true;
       } else {
-        console.error("Resend client initialization failed: API key or From Email missing in platform settings.");
-        if (!apiKey) console.error("Resend API Key is missing.");
-        if (!fromEmail) console.error("Resend From Email is missing.");
         resendInitialized = false;
         resend = null;
         fromEmailAddress = null;
@@ -99,24 +104,22 @@ export async function sendTransactionalEmail(
     return {
       success: true,
       message: "Email sent successfully.",
-      // Optionally include data?.id if needed by the caller
     };
   } catch (exception: any) {
     console.error("Exception during resend.emails.send():", exception);
     return {
       success: false,
       message: `An unexpected error occurred while sending email: ${exception.message || 'Unknown exception'}`,
-      error: JSON.stringify(exception, Object.getOwnPropertyNames(exception)), // Serialize full exception
+      error: JSON.stringify(exception, Object.getOwnPropertyNames(exception)), 
     };
   }
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: EmailType,
+  emailType: string, // Changed from EmailType enum to string
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; template: React.ReactElement | null }> {
-  // Fetch platformName from settings or use a default
-  let platformName = "Wohana Funds"; // Default
+  let platformName = "Wohana Funds"; 
   try {
     const settingsResult = await getPlatformSettingsAction();
     if (settingsResult.success && settingsResult.settings?.platformName) {
@@ -126,9 +129,8 @@ export async function getEmailTemplateAndSubject(
     console.warn("Could not fetch platform name for email template, using default.", e);
   }
 
-
   switch (emailType) {
-    case EmailType.WELCOME:
+    case "WELCOME": // Use string literal for case
       return {
         subject: `Welcome to ${platformName}!`,
         template: emailTemplates.WelcomeEmail({
@@ -137,7 +139,7 @@ export async function getEmailTemplateAndSubject(
           platformName,
         }),
       };
-    case EmailType.PASSWORD_RESET:
+    case "PASSWORD_RESET": // Use string literal for case
       return {
         subject: `Reset Your ${platformName} Password`,
         template: emailTemplates.PasswordResetEmail({
