@@ -1,7 +1,7 @@
 
 "use client";
 
-import * as React from "react"; // Ensure React is imported for JSX
+import * as React from "react"; 
 import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { EditProfileDialog } from "./components/edit-profile-dialog"; 
 import { ChangePasswordDialog } from "./components/change-password-dialog";
 import type { ProfileInfoItemProps } from "@/types";
+import { formatCurrency } from "@/lib/utils";
 
 const ProfileInfoItem = ({ icon, label, value }: ProfileInfoItemProps) => (
   <div className="space-y-1">
@@ -36,7 +37,7 @@ export default function ProfilePage() {
       if (userProfile?.accountType) {
         setIsLoadingAccountType(true);
         try {
-          setAccountTypeName(userProfile.accountType); // Directly display ID if name fetch is complex/not set up
+          setAccountTypeName(userProfile.accountType); 
         } catch (error) {
           console.error("Failed to load account type name", error);
           setAccountTypeName("Error loading type");
@@ -45,7 +46,7 @@ export default function ProfilePage() {
         }
       }
     }
-    if (userProfile) { // Ensure userProfile is loaded before attempting to load its details
+    if (userProfile) { 
       loadAccountTypeName();
     }
   }, [userProfile]);
@@ -109,11 +110,6 @@ export default function ProfilePage() {
     rejected: "Rejected",
   };
 
-  const formatCurrency = (value?: number) => {
-    if (value === undefined || value === null) return "N/A";
-    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
   const handleProfileUpdateSuccess = () => {
     setIsEditProfileOpen(false);
     if(user?.uid) fetchUserProfile(user.uid); 
@@ -169,8 +165,8 @@ export default function ProfilePage() {
                 value={isLoadingAccountType ? "Loading..." : (accountTypeName || userProfile.accountType || "N/A")} 
               />
               <ProfileInfoItem icon={<Receipt className="h-4 w-4 mr-2 text-primary" />} label="Account Number" value={userProfile.accountNumber} />
-              <ProfileInfoItem icon={<Wallet className="h-4 w-4 mr-2 text-primary" />} label="Account Balance" value={formatCurrency(userProfile.balance)} />
-              <ProfileInfoItem icon={<Globe className="h-4 w-4 mr-2 text-primary" />} label="Preferred Currency" value={userProfile.currency} />
+              <ProfileInfoItem icon={<Wallet className="h-4 w-4 mr-2 text-primary" />} label="Account Balance" value={formatCurrency(userProfile.balance, userProfile.primaryCurrency)} />
+              <ProfileInfoItem icon={<Globe className="h-4 w-4 mr-2 text-primary" />} label="Preferred Currency" value={userProfile.primaryCurrency} />
             </div>
           </CardContent>
         </Card>

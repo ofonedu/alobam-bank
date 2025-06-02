@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Timestamp } from "firebase/firestore";
+import { formatCurrency } from "@/lib/utils";
 
 
 const chartData = [
@@ -74,7 +75,6 @@ export default function DashboardPage() {
       fetchUserTransactionsAction(user.uid, 5)
         .then(result => {
           if (result.success && result.transactions) {
-            // Ensure dates are JS Date objects
             const processedTransactions = result.transactions.map(tx => ({
                 ...tx,
                 date: (tx.date as Timestamp)?.toDate ? (tx.date as Timestamp).toDate() : new Date(tx.date as Date | string | number)
@@ -122,11 +122,6 @@ export default function DashboardPage() {
     verified: "Verified",
     rejected: "Rejected",
   };
-
-  const formatCurrency = (value?: number) => {
-    if (value === undefined || value === null) return "N/A";
-    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
   
   const formatTransactionType = (type: Transaction["type"]) => {
     if (type === 'manual_credit' || type === 'credit') return 'Credit';
@@ -157,7 +152,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {userProfile ? formatCurrency(userProfile.balance) : <Skeleton className="h-8 w-24" />}
+              {userProfile ? formatCurrency(userProfile.balance, userProfile.primaryCurrency) : <Skeleton className="h-8 w-24" />}
             </div>
             <p className="text-xs text-muted-foreground pt-1">
               Account No: {userProfile?.accountNumber || <Skeleton className="h-4 w-20" />}
@@ -256,7 +251,7 @@ export default function DashboardPage() {
                     </div>
                     <span className={`font-semibold ${transaction.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                       {transaction.amount < 0 ? "-" : "+"}
-                      {formatCurrency(Math.abs(transaction.amount))}
+                      {formatCurrency(Math.abs(transaction.amount), transaction.currency)}
                     </span>
                   </li>
                 ))}

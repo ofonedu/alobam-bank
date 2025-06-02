@@ -17,12 +17,10 @@ import {
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import type { AuthUser, UserProfile } from "@/types";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast"; 
-
-// Removed import { sendTransactionalEmail } from '@/lib/email-service';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -49,12 +47,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userDoc = await getDoc(userDocRef);
       if (userDoc.exists()) {
         const data = userDoc.data() as Partial<UserProfile>;
-        const primaryCurrency = data.primaryCurrency || "USD";
-        const balances = (typeof data.balances === 'object' && data.balances !== null) ? data.balances : { [primaryCurrency]: 0 };
-        if (balances[primaryCurrency] === undefined) {
-          balances[primaryCurrency] = 0;
-        }
-        setUserProfile({ ...data, uid, primaryCurrency, balances } as UserProfile);
+        const fetchedBalance = typeof data.balance === 'number' ? data.balance : 0;
+        const fetchedPrimaryCurrency = data.primaryCurrency || "USD";
+
+        setUserProfile({ 
+          ...data, 
+          uid,
+          balance: fetchedBalance,
+          primaryCurrency: fetchedPrimaryCurrency,
+        } as UserProfile);
       } else {
         console.warn(`User profile document not found for UID: ${uid}. User might be new or data is missing.`);
         setUserProfile(null); 
@@ -104,14 +105,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const firebaseUser = userCredential.user;
       console.log(`signIn: Firebase sign-in successful for UID: ${firebaseUser.uid}`);
       
-      await fetchUserProfile(firebaseUser.uid);
-      // The isSuspended check will now be handled by the fetchUserProfile updating userProfile state,
-      // which downstream components can react to, or can be checked directly after fetch completes if needed.
-      // For immediate effect upon sign-in for this specific session if userProfile is not null:
-      if (userProfile?.isSuspended) {
+      // Fetch profile immediately after sign-in to get suspension status
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      let tempProfile: UserProfile | null = null;
+      if (userDoc.exists()) {
+          const profileData = userDoc.data() as Partial<UserProfile>;
+          tempProfile = {
+              ...profileData,
+              uid: firebaseUser.uid,
+              balance: typeof profileData.balance === 'number' ? profileData.balance : 0,
+              primaryCurrency: profileData.primaryCurrency || "USD",
+          } as UserProfile;
+          setUserProfile(tempProfile); // Set profile for current session
+      }
+
+      if (tempProfile?.isSuspended) {
           await firebaseSignOut(auth); 
           setUser(null);
-          setUserProfile(null);
+          setUserProfile(null); // Clear profile state
           setLoading(false);
           console.warn(`signIn: User ${data.email} (UID: ${firebaseUser.uid}) is suspended. Denying login.`);
           throw { code: 'auth/user-disabled', message: 'Your account has been suspended. Please contact support.' };
@@ -138,7 +150,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       const userDocRef = doc(db, "users", newUser.uid);
       const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-      const initialBalance = 0; 
       const constructedDisplayName = `${data.firstName} ${data.lastName}`;
       const primaryCurrency = data.currency || "USD";
       
@@ -150,11 +161,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         displayName: constructedDisplayName,
         photoURL: null, 
         phoneNumber: data.phoneNumber || undefined,
-        accountType: data.accountType || "user_default_type", // Default if none selected/available
+        accountType: data.accountType || "user_default_type",
+        balance: 0, // Initialize single balance
         primaryCurrency: primaryCurrency,
-        balances: { [primaryCurrency]: initialBalance }, // Initialize balances map
         kycStatus: "not_started",
-        role: data.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "admin" : "user", // Use env var for admin email
+        role: data.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "admin" : "user",
         accountNumber: newAccountNumber,
         isFlagged: false,
         accountHealthScore: 75, 
@@ -182,10 +193,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       setUserProfile(newUserProfileData);
       setUser(newUser as AuthUser); 
-      
-      // Removed welcome email sending logic
-      // console.log("signUp: Welcome email sending skipped as email service is removed/disabled.");
-
       setLoading(false);
       return newUser as AuthUser;
     } catch (error: any) {
@@ -259,5 +266,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    

@@ -28,6 +28,7 @@ import { recordTransferAction } from "@/lib/actions";
 import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 import type { PlatformSettings } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCurrency } from "@/lib/utils";
 
 export function InternationalTransferForm() {
   const { toast } = useToast();
@@ -55,7 +56,7 @@ export function InternationalTransferForm() {
             requireCOTConfirmation: false, 
             requireIMFAuthorization: false, 
             requireTaxClearance: false,
-            cotPercentage: 0.01, // Default if not set
+            cotPercentage: 0.01, 
         });
         console.error("Failed to load platform settings for transfer form:", result.error);
         toast({
@@ -98,7 +99,7 @@ export function InternationalTransferForm() {
     dataForTransfer: InternationalTransferData,
     authsSoFar: typeof collectedAuthCodes
   ) => {
-    setIsSubmittingInitialForm(false); // Allow UI to respond
+    setIsSubmittingInitialForm(false); 
     if (!platformSettings) {
       toast({ title: "Error", description: "Platform settings not loaded. Cannot proceed.", variant: "destructive" });
       resetTransferFlow();
@@ -139,16 +140,23 @@ export function InternationalTransferForm() {
     const cotPercentage = platformSettings.cotPercentage || 0.01;
     const cotAmount = values.amount * cotPercentage;
     const totalDeduction = values.amount + cotAmount;
+    const transactionCurrency = values.currency || "USD";
 
-    if (userProfile.balance < totalDeduction) {
+    // Assuming main balance is in user's primary currency
+    if (userProfile.balance < totalDeduction && userProfile.primaryCurrency === transactionCurrency) {
       toast({
         title: "Insufficient Funds",
-        description: `You do not have enough balance to cover the transfer amount (${values.currency} ${values.amount.toFixed(2)}) and estimated fees (${values.currency} ${cotAmount.toFixed(2)}). Required: ${values.currency} ${totalDeduction.toFixed(2)}, Available: ${values.currency} ${userProfile.balance.toFixed(2)}. (Note: Currency conversion not yet implemented, assuming same currency for balance check)`,
+        description: `You do not have enough balance (${formatCurrency(userProfile.balance, userProfile.primaryCurrency)}) to cover the transfer amount (${formatCurrency(values.amount, transactionCurrency)}) and estimated fees (${formatCurrency(cotAmount, transactionCurrency)}). Required: ${formatCurrency(totalDeduction, transactionCurrency)}.`,
         variant: "destructive",
       });
       setIsSubmittingInitialForm(false);
       return;
     }
+     if (userProfile.primaryCurrency !== transactionCurrency) {
+        console.warn("Currency mismatch: User's primary currency is different from transfer currency. This flow assumes a single balance field. Currency conversion logic may be needed.");
+         // Potentially block or warn more strongly if multi-currency isn't supported for balance holding
+    }
+
 
     decideAndExecuteNextStep(values, {});
   };
@@ -193,7 +201,7 @@ export function InternationalTransferForm() {
     dataToFinalize: InternationalTransferData,
     authCodesToFinalize: typeof collectedAuthCodes
   ) => {
-     if (!user) {
+     if (!user || !userProfile) {
       toast({ title: "Error", description: "User session lost. Please log in and try again.", variant: "destructive" });
       resetTransferFlow();
       return;
@@ -202,10 +210,10 @@ export function InternationalTransferForm() {
 
     const result = await recordTransferAction(user.uid, dataToFinalize, authCodesToFinalize, platformSettings?.cotPercentage);
 
-    if (result.success) {
+    if (result.success && result.newBalance !== undefined) {
       toast({
         title: "Transfer Successful",
-        description: `International transfer of ${dataToFinalize.currency} ${dataToFinalize.amount.toFixed(2)} to ${dataToFinalize.recipientName} processed. New balance (approx.): $${result.newBalance?.toFixed(2)} (Note: Currency conversion not yet implemented)`,
+        description: `International transfer of ${formatCurrency(dataToFinalize.amount, dataToFinalize.currency)} to ${dataToFinalize.recipientName} processed. New balance (approx.): ${formatCurrency(result.newBalance, userProfile.primaryCurrency)}.`,
       });
       await fetchUserProfile(user.uid); 
     } else {
@@ -333,7 +341,7 @@ export function InternationalTransferForm() {
                   <FormControl>
                       <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={isSubmittingInitialForm || anyDialogOpen} />
                   </FormControl>
-                  <FormDescription>Available balance: {userProfile ? `$${userProfile.balance.toFixed(2)}` : 'Loading...'}</FormDescription>
+                  <FormDescription>Available balance: {userProfile ? formatCurrency(userProfile.balance, userProfile.primaryCurrency) : 'Loading...'}</FormDescription>
                   <FormMessage />
                   </FormItem>
               )}

@@ -12,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
 import {
   Form,
@@ -30,6 +29,7 @@ import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { issueManualAdjustmentAction } from "@/lib/actions/admin-actions";
 import type { AdminUserView, AdjustBalanceDialogProps } from "@/types";
+import { formatCurrency } from "@/lib/utils";
 
 const AdjustBalanceSchema = z.object({
   amount: z.coerce.number().positive({ message: "Amount must be positive." }),
@@ -71,11 +71,13 @@ export function AdjustBalanceDialog({
     }
     setIsSubmitting(true);
     try {
+      // Pass user's primary currency to the action
       const result = await issueManualAdjustmentAction(
         user.uid,
         values.amount,
         values.type,
-        values.description
+        values.description,
+        user.primaryCurrency || "USD" // Pass user's primary currency
       );
 
       if (result.success) {
@@ -103,7 +105,7 @@ export function AdjustBalanceDialog({
         <DialogHeader>
           <DialogTitle>Adjust Balance for {user?.displayName || user?.email}</DialogTitle>
           <DialogDescription>
-            Manually credit or debit the user's account. Current Balance: ${user?.balance?.toFixed(2) ?? 'N/A'}
+            Manually credit or debit the user's account. Current Balance: {formatCurrency(user?.balance, user?.primaryCurrency)}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -113,7 +115,7 @@ export function AdjustBalanceDialog({
               name="amount"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Amount ($)</FormLabel>
+                  <FormLabel>Amount ({user?.primaryCurrency || 'USD'})</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 50.00" {...field} />
                   </FormControl>

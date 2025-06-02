@@ -136,11 +136,11 @@ export async function issueManualAdjustmentAction(
   amount: number,
   type: "credit" | "debit",
   description: string,
-  currency: string, // Currency for the adjustment
+  currency?: string, // Currency for the transaction record, not for balance selection
   adminUserId?: string 
 ): Promise<ManualAdjustmentResult> {
-  if (!targetUserId || !amount || !description || !currency) {
-    return { success: false, message: "Missing required fields: User ID, Amount, Description, or Currency." };
+  if (!targetUserId || !amount || !description ) {
+    return { success: false, message: "Missing required fields: User ID, Amount, or Description." };
   }
   if (amount <= 0) {
     return { success: false, message: "Amount must be positive." };
@@ -159,39 +159,35 @@ export async function issueManualAdjustmentAction(
       }
       
       const userProfileData = userDoc.data() as UserProfile;
-      const currentBalances = userProfileData.balances || {}; // Ensure balances map exists
-      const balanceForCurrency = currentBalances[currency] || 0; // Default to 0 if currency not in map
+      const currentBalance = userProfileData.balance || 0;
+      const userPrimaryCurrency = userProfileData.primaryCurrency || "USD";
       
-      const newBalanceForCurrency = parseFloat((balanceForCurrency + adjustmentAmount).toFixed(2));
+      const newBalance = parseFloat((currentBalance + adjustmentAmount).toFixed(2));
       
-      // Use dot notation to update the specific currency in the balances map
-      const updatePayload = {
-        [`balances.${currency}`]: newBalanceForCurrency
-      };
-      transaction.update(userDocRef, updatePayload);
+      transaction.update(userDocRef, { balance: newBalance });
 
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId,
         date: Timestamp.now(),
         description: description, 
-        amount: adjustmentAmount, // Record the actual change (+ or -)
+        amount: adjustmentAmount,
         type: transactionTypeForRecord,
         status: "completed",
-        currency: currency, 
+        currency: currency || userPrimaryCurrency, 
         notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. Original input reason: ${description}`
       };
       const transactionDocRef = doc(collection(db, "transactions")); 
       transaction.set(transactionDocRef, newTransactionData); 
-      // Return data needed for success message and revalidation
+
       return { 
         transactionId: transactionDocRef.id, 
-        newBalance: newBalanceForCurrency, 
-        userCurrency: currency, 
-        userName: userProfileData.displayName || targetUserId // For the success message
+        newBalance: newBalance,
+        userCurrency: currency || userPrimaryCurrency, 
+        userName: userProfileData.displayName || targetUserId
       }; 
     });
     
-    const successMessage = `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${transactionResult.userName} processed. New balance for ${transactionResult.userCurrency}: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`;
+    const successMessage = `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${transactionResult.userName} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`;
 
     revalidatePath("/admin/financial-ops");
     revalidatePath("/admin/transactions"); 
@@ -240,28 +236,24 @@ export async function generateRandomTransactionsAction(
   if (count > 50) { 
     return { success: false, message: "Cannot generate more than 50 transactions at once." };
   }
+  console.log(`generateRandomTransactionsAction: Starting for user ${targetUserId}, count: ${count}, targetNetValue: ${targetNetValue}`);
 
   try {
     const userDocRef = doc(db, "users", targetUserId);
     const userDocSnap = await getDoc(userDocRef);
 
     if (!userDocSnap.exists()) {
+      console.error(`generateRandomTransactionsAction: User profile not found for ${targetUserId}.`);
       return { success: false, message: "Target user profile not found." };
     }
     const userProfileData = userDocSnap.data() as UserProfile;
-    const userCurrency = userProfileData.primaryCurrency || "USD"; // Default to USD if not set
+    const userPrimaryCurrency = userProfileData.primaryCurrency || "USD";
+    const initialBalance = userProfileData.balance || 0;
+    console.log(`generateRandomTransactionsAction: User ${targetUserId} initial balance: ${initialBalance} ${userPrimaryCurrency}`);
     
-    // Robustly initialize currentBalances and initialBalanceForCurrency
-    const currentBalances = typeof userProfileData.balances === 'object' && userProfileData.balances !== null 
-                            ? userProfileData.balances 
-                            : { [userCurrency]: 0 };
-    const initialBalanceForCurrency = currentBalances[userCurrency] || 0;
-
-
     const batch = writeBatch(db);
-    const transactionsColRef = collection(db, "transactions");
-
     let cumulativeAmountForCompletedTx = 0;
+    let generatedTxCount = 0;
 
     for (let i = 0; i < count; i++) {
       const randomDate = new Date();
@@ -269,28 +261,21 @@ export async function generateRandomTransactionsAction(
       randomDate.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60), Math.floor(Math.random() * 60));
 
       let amount;
-      let type: TransactionType['type'];
-
       if (targetNetValue !== undefined && targetNetValue !== null) {
         const remainingTransactions = count - i;
         let idealAmountPerTx = 0;
         if (remainingTransactions > 0) {
             idealAmountPerTx = (targetNetValue - cumulativeAmountForCompletedTx) / remainingTransactions;
         }
-        
         const randomFactor = (Math.random() * 0.6) + 0.7; 
         amount = parseFloat((idealAmountPerTx * randomFactor).toFixed(2));
-        
         if (i === count - 1) { 
             amount = parseFloat((targetNetValue - cumulativeAmountForCompletedTx).toFixed(2));
         }
-        
         const maxReasonableTxAmount = targetNetValue === 0 ? 500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * 1.5;
         const minReasonableTxAmount = targetNetValue === 0 ? -500 : (Math.abs(targetNetValue) / Math.max(1, count / 4)) * -1.5;
-
         amount = Math.max(minReasonableTxAmount, Math.min(maxReasonableTxAmount, amount));
         amount = parseFloat(amount.toFixed(2)); 
-
         if (amount === 0 && targetNetValue !== 0 && count > 1 && i < count -1 ) { 
             amount = parseFloat(((Math.random() < 0.5 ? 1 : -1) * (Math.random() * 50 + 5)).toFixed(2));
         }
@@ -299,31 +284,12 @@ export async function generateRandomTransactionsAction(
         amount = parseFloat(amount.toFixed(2));
       }
 
-      if (amount > 0) {
-        type = getRandomElement(["deposit", "credit", "manual_credit"]);
-      } else {
-        type = getRandomElement(["withdrawal", "fee", "debit", "transfer", "manual_debit"]);
-      }
-      
-      let counterpartName = "";
-      const isCompany = Math.random() < 0.4; 
-      if (isCompany) {
-        counterpartName = `${getRandomElement(companyRegions)} ${getRandomElement(companySuffixes)}`;
-      } else {
-        counterpartName = getRandomName();
-      }
-      
+      const type: TransactionType['type'] = amount > 0 ? getRandomElement(["deposit", "credit", "manual_credit"]) : getRandomElement(["withdrawal", "fee", "debit", "transfer", "manual_debit"]);
+      let counterpartName = Math.random() < 0.4 ? `${getRandomElement(companyRegions)} ${getRandomElement(companySuffixes)}` : getRandomName();
       const description = `${getRandomElement(transactionActions)} ${counterpartName}`;
       
-      let status: TransactionType['status'];
       const statusRoll = Math.random() * 100;
-      if (statusRoll < 95) { 
-        status = "completed";
-      } else if (statusRoll < 98) { 
-        status = "pending";
-      } else { 
-        status = "failed";
-      }
+      const status: TransactionType['status'] = statusRoll < 95 ? "completed" : statusRoll < 98 ? "pending" : "failed";
 
       const transactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId: targetUserId, 
@@ -332,25 +298,30 @@ export async function generateRandomTransactionsAction(
         amount: amount,
         type: type,
         status: status,
-        currency: userCurrency, // Use the determined user currency
+        currency: userPrimaryCurrency,
         isFlagged: Math.random() < 0.05, 
       };
+      console.log(`generateRandomTransactionsAction: Generated tx ${i+1}: Amount: ${amount}, Status: ${status}, Type: ${type}`);
       
       const newTransactionRef = doc(collection(db, "transactions")); 
       batch.set(newTransactionRef, transactionData);
+      generatedTxCount++;
 
       if (status === 'completed') { 
         cumulativeAmountForCompletedTx += amount;
+        console.log(`generateRandomTransactionsAction: Tx ${i+1} is 'completed'. cumulativeAmountForCompletedTx updated to: ${cumulativeAmountForCompletedTx}`);
       }
     }
+    console.log(`generateRandomTransactionsAction: Total amount for 'completed' transactions: ${cumulativeAmountForCompletedTx}`);
     
-    const finalBalanceForCurrency = parseFloat((initialBalanceForCurrency + cumulativeAmountForCompletedTx).toFixed(2));
-    // Ensure updatedBalances preserves other currency balances if they exist
-    const updatedBalances = { ...currentBalances, [userCurrency]: finalBalanceForCurrency };
+    const finalBalance = parseFloat((initialBalance + cumulativeAmountForCompletedTx).toFixed(2));
+    console.log(`generateRandomTransactionsAction: Calculated new balance for ${userPrimaryCurrency}: ${finalBalance}`);
     
-    batch.update(userDocRef, { balances: updatedBalances });
+    batch.update(userDocRef, { balance: finalBalance });
+    console.log(`generateRandomTransactionsAction: Updating user doc with balance: ${finalBalance}. Added ${generatedTxCount} transaction sets to batch.`);
     
     await batch.commit();
+    console.log(`generateRandomTransactionsAction: Batch committed successfully for user ${targetUserId}.`);
     
     revalidatePath("/admin/transactions");
     revalidatePath("/admin/financial-ops");
@@ -361,8 +332,8 @@ export async function generateRandomTransactionsAction(
 
     return { 
       success: true, 
-      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance for ${userCurrency} updated by ${userCurrency} ${cumulativeAmountForCompletedTx.toFixed(2)} to ${userCurrency} ${finalBalanceForCurrency.toFixed(2)}.`, 
-      count 
+      message: `${generatedTxCount} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance updated by ${userPrimaryCurrency} ${cumulativeAmountForCompletedTx.toFixed(2)} to ${userPrimaryCurrency} ${finalBalance.toFixed(2)}.`, 
+      count: generatedTxCount 
     };
   } catch (error: any) {
     console.error(`Error generating random transactions for user ${targetUserId}:`, error);
@@ -486,7 +457,7 @@ interface TransactionActionResult {
 export async function markTransactionAsCompletedAction(
   transactionId: string,
   userId: string,
-  transactionAmountForBalanceUpdate: number // The actual amount to adjust balance by
+  transactionAmountForBalanceUpdate: number 
 ): Promise<TransactionActionResult> {
   if (!transactionId || !userId) {
     return { success: false, message: "Transaction ID and User ID are required." };
@@ -513,20 +484,11 @@ export async function markTransactionAsCompletedAction(
       }
       
       const userProfileData = userDoc.data() as UserProfile;
-      // Use the transaction's currency, or fallback to user's primary, then USD
-      const currencyForBalanceUpdate = transactionData.currency || userProfileData.primaryCurrency || "USD";
+      const currentBalance = userProfileData.balance || 0;
       
-      const currentBalances = userProfileData.balances || {};
-      const balanceForCurrency = currentBalances[currencyForBalanceUpdate] || 0;
+      const newBalance = parseFloat((currentBalance + transactionAmountForBalanceUpdate).toFixed(2));
       
-      // Use the passed transactionAmountForBalanceUpdate for balance calculation
-      const newBalanceForCurrency = parseFloat((balanceForCurrency + transactionAmountForBalanceUpdate).toFixed(2));
-      
-      // Update specific currency field using dot notation
-      const updatePayload = {
-        [`balances.${currencyForBalanceUpdate}`]: newBalanceForCurrency
-      };
-      firestoreTransaction.update(userDocRef, updatePayload);
+      firestoreTransaction.update(userDocRef, { balance: newBalance });
       firestoreTransaction.update(transactionDocRef, { status: "completed", updatedAt: Timestamp.now() });
     });
 
@@ -575,7 +537,6 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
 
     const userDocRef = doc(db, "users", uid);
     const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-    const initialBalance = 0;
     const constructedDisplayName = `${firstName} ${lastName}`;
     const primaryCurrency = currency || "USD";
 
@@ -589,8 +550,8 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
       photoURL: null,
       phoneNumber: phoneNumber || undefined,
       accountType: accountType || "default_user_type",
+      balance: 0, // Initialize single balance
       primaryCurrency: primaryCurrency,
-      balances: { [primaryCurrency]: initialBalance }, // Ensure balances is a map
       kycStatus: "not_started",
       role: role || "user",
       accountNumber: newAccountNumber,
@@ -623,4 +584,3 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     return { success: false, message: errorMessage, error: error.message };
   }
 }
-    

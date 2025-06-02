@@ -17,8 +17,7 @@ export interface UserProfile {
   photoURL?: string | null;
   phoneNumber?: string;
   accountType?: string;
-  currency?: string; 
-  balances?: Record<string, number>; 
+  balance: number; // Changed from balances map
   primaryCurrency?: string; 
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
@@ -166,7 +165,6 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
-  // Resend specific settings
   resendApiKey?: string;
   resendFromEmail?: string;
 }

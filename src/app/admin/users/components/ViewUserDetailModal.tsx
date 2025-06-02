@@ -17,8 +17,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { AdminUserView, ViewUserDetailModalProps, InfoPillProps } from "@/types";
 import { Mail, Phone, UserCircle, ShieldCheck, Wallet, Landmark, CalendarDays, MapPin, Shapes, Globe } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
-const InfoPill = ({ label, value, icon }: InfoPillProps) => (
+const InfoPill = ({ icon, label, value }: InfoPillProps) => (
   <div className="py-2">
     <Label className="text-xs font-semibold text-muted-foreground flex items-center">
       {icon}
@@ -64,11 +65,11 @@ export function ViewUserDetailModal({
           <InfoPill icon={<UserCircle className="mr-2 h-4 w-4" />} label="Full Name" value={user.displayName} />
           <InfoPill icon={<Mail className="mr-2 h-4 w-4" />} label="Email" value={user.email} />
           <InfoPill icon={<Phone className="mr-2 h-4 w-4" />} label="Phone Number" value={user.phoneNumber} />
-          <InfoPill icon={<Wallet className="mr-2 h-4 w-4" />} label="Balance" value={`${user.currency || 'USD'} ${user.balance.toFixed(2)}`} />
+          <InfoPill icon={<Wallet className="mr-2 h-4 w-4" />} label="Balance" value={formatCurrency(user.balance, user.primaryCurrency)} />
           <InfoPill icon={<Landmark className="mr-2 h-4 w-4" />} label="Account Number" value={user.accountNumber} />
           <InfoPill icon={<UserCircle className="mr-2 h-4 w-4" />} label="Role" value={user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : "N/A"} />
           <InfoPill icon={<Shapes className="mr-2 h-4 w-4" />} label="Account Type" value={user.accountType} />
-          <InfoPill icon={<Globe className="mr-2 h-4 w-4" />} label="Currency" value={user.currency} />
+          <InfoPill icon={<Globe className="mr-2 h-4 w-4" />} label="Primary Currency" value={user.primaryCurrency} />
           
           <div className="py-2">
             <Label className="text-xs font-semibold text-muted-foreground flex items-center">
@@ -82,7 +83,7 @@ export function ViewUserDetailModal({
           
            <div className="py-2">
             <Label className="text-xs font-semibold text-muted-foreground flex items-center">
-                <ShieldCheck className="mr-2 h-4 w-4" /> {/* Consider a different icon for account status */}
+                <ShieldCheck className="mr-2 h-4 w-4" /> 
                 Account Status
             </Label>
              <Badge variant={user.isSuspended ? "destructive" : "default"} className={user.isSuspended ? "" : "bg-green-500 hover:bg-green-600 text-white mt-1"}>
@@ -102,5 +103,3 @@ export function ViewUserDetailModal({
     </Dialog>
   );
 }
-
-    

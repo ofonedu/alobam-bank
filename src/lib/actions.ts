@@ -5,10 +5,9 @@
 import { db, storage } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
 import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, ClientKYCData, KYCSubmissionResult } from "@/types";
-import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
-// Removed import { sendTransactionalEmail } from "./email-service";
 import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions";
 import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
 
@@ -77,7 +76,7 @@ export async function submitKycAction(
     const kycDocRef = doc(db, "kycData", userId);
     const userDocRef = doc(db, "users", userId);
 
-    const newKycDataForFirestore: KYCData = { // Type for Firestore with Timestamp
+    const newKycDataForFirestore: KYCData = { 
       userId,
       fullName,
       dateOfBirth,
@@ -87,7 +86,6 @@ export async function submitKycAction(
       photoFileName: photoFileName,
       status: "pending_review",
       submittedAt: Timestamp.now(),
-      // reviewedAt, reviewedBy, rejectionReason will be set by admin
     };
 
     await setDoc(kycDocRef, newKycDataForFirestore, { merge: true });
@@ -96,9 +94,6 @@ export async function submitKycAction(
       kycStatus: newKycDataForFirestore.status,
     };
     await updateDoc(userDocRef, userProfileUpdate);
-
-    // Removed email sending logic
-    // console.log("submitKycAction: KYC submitted email sending skipped.");
 
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
@@ -198,7 +193,7 @@ export async function recordTransferAction(
 
     const cotAmount = transferData.amount * cotPercentageToUse;
     const totalDeduction = transferData.amount + cotAmount;
-    const transactionCurrency = 'currency' in transferData ? transferData.currency : "USD";
+    const transactionCurrency = 'currency' in transferData ? transferData.currency : "USD"; // Default currency for transfers
 
 
     let cotCodeId: string | undefined;
@@ -234,18 +229,22 @@ export async function recordTransferAction(
         throw new Error("User profile not found within transaction.");
       }
       const userProfileData = freshUserDoc.data() as UserProfile;
-      const currentBalances = userProfileData.balances || {};
-      const balanceForCurrency = currentBalances[transactionCurrency] || 0;
+      const currentBalance = userProfileData.balance || 0; // Use single balance field
 
-
-      if (balanceForCurrency < totalDeduction) {
-        throw new Error(`Insufficient funds in ${transactionCurrency} to complete the transfer including fees. Required: ${totalDeduction.toFixed(2)}, Available: ${balanceForCurrency.toFixed(2)}`);
+      // Assuming transfers deduct from the primary balance.
+      // If multi-currency for transfers were intended, this logic would need userProfileData.primaryCurrency
+      // to match transactionCurrency or a more complex balance map update.
+      // For now, we assume the main 'balance' field is in the user's primaryCurrency.
+      if (userProfileData.primaryCurrency !== transactionCurrency) {
+        console.warn(`Transfer currency (${transactionCurrency}) differs from user's primary currency (${userProfileData.primaryCurrency}). Balance update will affect the main balance field. This might require currency conversion logic not yet implemented.`);
       }
 
-      const updatedBalanceForCurrency = parseFloat((balanceForCurrency - totalDeduction).toFixed(2));
-      const newBalances = { ...currentBalances, [transactionCurrency]: updatedBalanceForCurrency };
+      if (currentBalance < totalDeduction) {
+        throw new Error(`Insufficient funds in your primary account (${userProfileData.primaryCurrency}) to complete the transfer including fees. Required: ${totalDeduction.toFixed(2)}, Available: ${currentBalance.toFixed(2)}`);
+      }
 
-      transaction.update(userDocRef, { balances: newBalances });
+      const updatedBalance = parseFloat((currentBalance - totalDeduction).toFixed(2));
+      transaction.update(userDocRef, { balance: updatedBalance });
 
       const recipientDetails: Partial<TransactionType['recipientDetails']> = {};
       if (transferData.recipientName) recipientDetails.name = transferData.recipientName;
@@ -275,7 +274,7 @@ export async function recordTransferAction(
         userId,
         date: Timestamp.now(),
         description: `Transfer to ${transferData.recipientName}`,
-        amount: -transferData.amount,
+        amount: -transferData.amount, // Store the actual transfer amount as negative
         type: "transfer",
         status: "completed",
         currency: transactionCurrency,
@@ -285,14 +284,28 @@ export async function recordTransferAction(
       const transactionDocRef = doc(collection(db, "transactions"));
       transaction.set(transactionDocRef, newTransactionData);
       
-      const firestoreBatchForCodesInsideTx = writeBatch(db); // This is conceptual, actual batch update happens outside
+      // Handling COT as a separate transaction/fee if applicable
+      if (cotAmount > 0) {
+        const cotTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
+            userId,
+            date: Timestamp.now(),
+            description: `Cost of Transfer (COT) for transaction to ${transferData.recipientName}`,
+            amount: -cotAmount, // COT is a deduction
+            type: "fee",
+            status: "completed",
+            currency: transactionCurrency,
+            relatedTransferId: transactionDocRef.id,
+        };
+        const cotTransactionDocRef = doc(collection(db, "transactions"));
+        transaction.set(cotTransactionDocRef, cotTransactionData);
+      }
+      
+      const firestoreBatchForCodesInsideTx = writeBatch(db); 
       if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodesInsideTx);
       if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodesInsideTx);
       if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodesInsideTx);
-      // Note: Committing this batch here would be an anti-pattern for Firestore transactions.
-      // It's better to collect IDs and commit after the main transaction.
 
-      return { balance: updatedBalanceForCurrency, transactionId: transactionDocRef.id, currency: transactionCurrency };
+      return { balance: updatedBalance, transactionId: transactionDocRef.id, currency: userProfileData.primaryCurrency || "USD" };
     });
 
     const firestoreBatchForCodes = writeBatch(db);
@@ -301,9 +314,6 @@ export async function recordTransferAction(
     if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
     await firestoreBatchForCodes.commit().catch(err => console.error("Error committing code usage batch:", err));
 
-    // Removed email sending logic
-    // console.log("recordTransferAction: Transfer success email sending skipped.");
-
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/transactions");
     revalidatePath(`/dashboard/profile`);
@@ -311,14 +321,12 @@ export async function recordTransferAction(
     return {
       success: true,
       message: "Transfer processed successfully.",
-      newBalance: transactionResult.balance, // This is the balance of the specific currency
+      newBalance: transactionResult.balance,
       transactionId: transactionResult.transactionId,
     };
 
   } catch (error: any) {
     console.error("Error recording transfer:", error);
-    // Removed email sending logic
-    // console.log("recordTransferAction: Transfer failed email sending skipped.");
     return {
       success: false,
       message: error.message || "An unexpected error occurred during transfer processing.",
@@ -479,16 +487,13 @@ export async function submitLoanApplicationAction(
       amount: validatedData.data.amount,
       termMonths: validatedData.data.termMonths,
       purpose: validatedData.data.purpose,
-      interestRate: 0.08, // Default or from settings
+      interestRate: 0.08, 
       status: "pending",
       applicationDate: Timestamp.now(),
       currency: userProfile.primaryCurrency || "USD",
     };
 
     const loanDocRef = await addDoc(loansColRef, newLoanDocData);
-
-    // Removed email sending logic
-    // console.log("submitLoanApplicationAction: Loan application submitted email sending skipped.");
 
     revalidatePath("/dashboard/loans");
     revalidatePath("/admin/loans");
@@ -572,5 +577,3 @@ export async function submitSupportTicketAction(
     };
   }
 }
-
-    

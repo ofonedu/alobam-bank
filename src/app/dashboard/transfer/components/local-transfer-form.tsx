@@ -28,6 +28,7 @@ import { recordTransferAction } from "@/lib/actions";
 import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 import type { PlatformSettings } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCurrency } from "@/lib/utils";
 
 export function LocalTransferForm() {
   const { toast } = useToast();
@@ -55,7 +56,7 @@ export function LocalTransferForm() {
             requireCOTConfirmation: false, 
             requireIMFAuthorization: false, 
             requireTaxClearance: false,
-            cotPercentage: 0.01, // Default if not set
+            cotPercentage: 0.01, 
         });
         console.error("Failed to load platform settings for transfer form:", result.error);
         toast({
@@ -96,7 +97,7 @@ export function LocalTransferForm() {
     dataForTransfer: LocalTransferData, 
     authsSoFar: typeof collectedAuthCodes
   ) => {
-    setIsSubmittingInitialForm(false); // Allow UI to respond before next dialog
+    setIsSubmittingInitialForm(false); 
     if (!platformSettings) {
       toast({ title: "Error", description: "Platform settings not loaded. Cannot proceed.", variant: "destructive" });
       resetTransferFlow();
@@ -140,7 +141,7 @@ export function LocalTransferForm() {
     if (userProfile.balance < totalDeduction) {
       toast({
         title: "Insufficient Funds",
-        description: `You do not have enough balance to cover the transfer amount ($${values.amount.toFixed(2)}) and estimated fees ($${cotAmount.toFixed(2)}). Required: $${totalDeduction.toFixed(2)}, Available: $${userProfile.balance.toFixed(2)}.`,
+        description: `You do not have enough balance to cover the transfer amount (${formatCurrency(values.amount, userProfile.primaryCurrency)}) and estimated fees (${formatCurrency(cotAmount, userProfile.primaryCurrency)}). Required: ${formatCurrency(totalDeduction, userProfile.primaryCurrency)}, Available: ${formatCurrency(userProfile.balance, userProfile.primaryCurrency)}.`,
         variant: "destructive",
       });
       setIsSubmittingInitialForm(false);
@@ -190,7 +191,7 @@ export function LocalTransferForm() {
     dataToFinalize: LocalTransferData, 
     authCodesToFinalize: typeof collectedAuthCodes
   ) => {
-    if (!user) {
+    if (!user || !userProfile) {
       toast({ title: "Error", description: "User session lost. Please log in and try again.", variant: "destructive" });
       resetTransferFlow();
       return;
@@ -199,10 +200,10 @@ export function LocalTransferForm() {
 
     const result = await recordTransferAction(user.uid, dataToFinalize, authCodesToFinalize, platformSettings?.cotPercentage);
 
-    if (result.success) {
+    if (result.success && result.newBalance !== undefined) {
       toast({
         title: "Transfer Successful",
-        description: `Local transfer of $${dataToFinalize.amount.toFixed(2)} to ${dataToFinalize.recipientName} processed. New balance: $${result.newBalance?.toFixed(2)}`,
+        description: `Local transfer of ${formatCurrency(dataToFinalize.amount, userProfile.primaryCurrency)} to ${dataToFinalize.recipientName} processed. New balance: ${formatCurrency(result.newBalance, userProfile.primaryCurrency)}`,
       });
       await fetchUserProfile(user.uid); 
     } else {
@@ -299,12 +300,12 @@ export function LocalTransferForm() {
             name="amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Amount to Transfer ($)</FormLabel>
+                <FormLabel>Amount to Transfer ({userProfile?.primaryCurrency || 'USD'})</FormLabel>
                 <FormControl>
                   <Input type="number" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormDescription>
-                  Available balance: {userProfile ? `$${userProfile.balance.toFixed(2)}` : 'Loading...'}
+                  Available balance: {userProfile ? formatCurrency(userProfile.balance, userProfile.primaryCurrency) : 'Loading...'}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -339,7 +340,7 @@ export function LocalTransferForm() {
           <COTConfirmationDialog
             isOpen={showCOTDialog}
             onOpenChange={(open) => {
-                if (!open) { handleDialogCancel(); } // If closed by user, cancel flow
+                if (!open) { handleDialogCancel(); } 
                 setShowCOTDialog(open);
             }}
             transferData={currentTransferData}
