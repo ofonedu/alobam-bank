@@ -16,11 +16,12 @@ import {
   deleteUser
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import type { AuthUser, UserProfile } from "@/types";
+import type { AuthUser, UserProfile, EmailType } from "@/types"; // Added EmailType
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast"; 
+import { sendTransactionalEmail, getEmailTemplateAndSubject } from "@/lib/email-service"; // Added imports
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -105,7 +106,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const firebaseUser = userCredential.user;
       console.log(`signIn: Firebase sign-in successful for UID: ${firebaseUser.uid}`);
       
-      // Fetch profile immediately after sign-in to get suspension status
       const userDocRef = doc(db, "users", firebaseUser.uid);
       const userDoc = await getDoc(userDocRef);
       let tempProfile: UserProfile | null = null;
@@ -117,13 +117,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               balance: typeof profileData.balance === 'number' ? profileData.balance : 0,
               primaryCurrency: profileData.primaryCurrency || "USD",
           } as UserProfile;
-          setUserProfile(tempProfile); // Set profile for current session
+          setUserProfile(tempProfile); 
       }
 
       if (tempProfile?.isSuspended) {
           await firebaseSignOut(auth); 
           setUser(null);
-          setUserProfile(null); // Clear profile state
+          setUserProfile(null); 
           setLoading(false);
           console.warn(`signIn: User ${data.email} (UID: ${firebaseUser.uid}) is suspended. Denying login.`);
           throw { code: 'auth/user-disabled', message: 'Your account has been suspended. Please contact support.' };
@@ -162,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: null, 
         phoneNumber: data.phoneNumber || undefined,
         accountType: data.accountType || "user_default_type",
-        balance: 0, // Initialize single balance
+        balance: 0, 
         primaryCurrency: primaryCurrency,
         kycStatus: "not_started",
         role: data.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "admin" : "user",
@@ -193,7 +193,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       setUserProfile(newUserProfileData);
       setUser(newUser as AuthUser); 
-      setLoading(false);
+      setLoading(false); // Set loading false before attempting to send email
+
+      // Send welcome email
+      if (newUser.email) {
+        const emailPayload = {
+          userName: constructedDisplayName || "Valued User",
+          loginLink: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`, 
+        };
+        const { subject, template } = getEmailTemplateAndSubject(EmailType.WELCOME, emailPayload);
+        
+        if (template) {
+          console.log(`signUp: Attempting to send welcome email to: ${newUser.email}`);
+          sendTransactionalEmail({ to: newUser.email, subject, reactElement: template })
+            .then(emailResult => {
+              if (emailResult.success) {
+                console.log(`Welcome email sent successfully to: ${newUser.email}`);
+              } else {
+                console.error(`Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
+              }
+            })
+            .catch(emailError => {
+              console.error(`Exception sending welcome email to ${newUser.email}:`, emailError);
+            });
+        } else {
+            console.warn(`signUp: Welcome email template not found for type ${EmailType.WELCOME}.`);
+        }
+      } else {
+        console.warn("signUp: New user has no email, cannot send welcome email. UID:", newUser.uid);
+      }
+
       return newUser as AuthUser;
     } catch (error: any) {
       setLoading(false);
@@ -266,3 +295,5 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
+    
