@@ -13,10 +13,10 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
-  deleteUser
+  deleteUser as deleteAuthUser, // Renamed to avoid conflict
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { type UserProfile, type AuthUser } from "@/types";
+import type { UserProfile, AuthUser } from "@/types";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
@@ -142,21 +142,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signUp = async (data: RegisterFormData) => {
     setLoading(true);
-    let newUser: FirebaseUser | null = null;
+    let newAuthUser: FirebaseUser | null = null; // Changed from any to FirebaseUser | null
     try {
       console.log("signUp: Attempting to create Firebase Auth user for:", data.email);
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-      newUser = userCredential.user;
-      console.log("signUp: Firebase Auth user created successfully. UID:", newUser.uid);
+      newAuthUser = userCredential.user;
+      console.log("signUp: Firebase Auth user created successfully. UID:", newAuthUser.uid);
 
-      const userDocRef = doc(db, "users", newUser.uid);
+      const userDocRef = doc(db, "users", newAuthUser.uid);
       const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
       const constructedDisplayName = `${data.firstName} ${data.lastName}`;
       const primaryCurrency = data.currency || "USD";
 
       const newUserProfileData: UserProfile = {
-        uid: newUser.uid,
-        email: newUser.email,
+        uid: newAuthUser.uid,
+        email: newAuthUser.email,
         firstName: data.firstName,
         lastName: data.lastName,
         displayName: constructedDisplayName,
@@ -175,82 +175,83 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
 
       try {
-        console.log("signUp: Attempting to create Firestore profile for UID:", newUser.uid, newUserProfileData);
+        console.log("signUp: Attempting to create Firestore profile for UID:", newAuthUser.uid, newUserProfileData);
         await setDoc(userDocRef, newUserProfileData);
-        console.log("signUp: Firestore profile created successfully for UID:", newUser.uid);
+        console.log("signUp: Firestore profile created successfully for UID:", newAuthUser.uid);
       } catch (firestoreError: any) {
-        console.error("signUp: CRITICAL - Failed to create Firestore profile for UID:", newUser.uid, firestoreError);
-        if (newUser) {
-          console.warn("signUp: Attempting to delete Firebase Auth user due to Firestore profile creation failure. UID:", newUser.uid);
+        console.error("signUp: CRITICAL - Failed to create Firestore profile for UID:", newAuthUser.uid, firestoreError);
+        if (newAuthUser) {
+          console.warn("signUp: Attempting to delete Firebase Auth user due to Firestore profile creation failure. UID:", newAuthUser.uid);
           try {
-            await deleteUser(newUser);
-            console.log("signUp: Firebase Auth user deleted successfully after Firestore failure. UID:", newUser.uid);
+            await deleteAuthUser(newAuthUser); // Use aliased import
+            console.log("signUp: Firebase Auth user deleted successfully after Firestore failure. UID:", newAuthUser.uid);
           } catch (deleteError: any) {
-            console.error("signUp: CRITICAL - Failed to delete Firebase Auth user after Firestore failure. Orphaned Auth user may exist. UID:", newUser.uid, deleteError);
+            console.error("signUp: CRITICAL - Failed to delete Firebase Auth user after Firestore failure. Orphaned Auth user may exist. UID:", newAuthUser.uid, deleteError);
           }
         }
         throw firestoreError;
       }
 
       setUserProfile(newUserProfileData);
-      setUser(newUser as AuthUser);
+      setUser(newAuthUser as AuthUser);
       setLoading(false);
 
-      if (newUser.email) {
-        console.log(`signUp: Preparing to send welcome email to: ${newUser.email}`);
+      if (newAuthUser.email) {
+        console.log(`signUp: Preparing to send welcome email to: ${newAuthUser.email}`);
         const settingsResult = await getPlatformSettingsAction();
         
         const emailPayload = {
           fullName: constructedDisplayName || "Valued User",
           bankName: settingsResult.settings?.platformName || "Wohana Funds",
-          emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl, // Pass this to template
+          emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
           accountNumber: newAccountNumber,
           loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
         };
         console.log("signUp: Email payload for template:", emailPayload);
 
         try {
-          const emailContent = await getEmailTemplateAndSubject("WELCOME", emailPayload);
+          const emailContent = await getEmailTemplateAndSubject("WELCOME", emailPayload); // Using string literal
 
           if (emailContent.html) {
             console.log(`signUp: Attempting to send welcome email. Subject: "${emailContent.subject}"`);
             sendTransactionalEmail({
-              to: newUser.email,
+              to: newAuthUser.email,
               subject: emailContent.subject,
               htmlBody: emailContent.html,
               textBody: `Welcome to ${emailPayload.bankName}, ${emailPayload.fullName}! Your account is ready. Account Number: ${emailPayload.accountNumber}. Login at ${emailPayload.loginUrl}`
             })
               .then(emailResult => {
                 if (emailResult.success) {
-                  console.log(`signUp: Welcome email sent successfully to: ${newUser.email}. Message: ${emailResult.message}`);
+                  console.log(`signUp: Welcome email sent successfully to: ${newAuthUser.email}. Message: ${emailResult.message}`);
                 } else {
-                  console.error(`signUp: Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
+                  console.error(`signUp: Failed to send welcome email to ${newAuthUser.email}: ${emailResult.message}`, emailResult.error);
                 }
               })
               .catch(emailError => {
-                console.error(`signUp: Exception sending welcome email to ${newUser.email}:`, emailError);
+                console.error(`signUp: Exception sending welcome email to ${newAuthUser.email}:`, emailError);
               });
           } else {
               console.warn(`signUp: Welcome email HTML content was null or empty for type "WELCOME".`);
           }
         } catch (emailError: any) {
-            console.error(`signUp: Exception preparing welcome email content for ${newUser.email}:`, emailError.message, emailError);
+            console.error(`signUp: Exception preparing welcome email content for ${newAuthUser.email}:`, emailError.message, JSON.stringify(emailError, Object.getOwnPropertyNames(emailError)));
         }
       } else {
-        console.warn("signUp: New user has no email, cannot send welcome email. UID:", newUser.uid);
+        console.warn("signUp: New user has no email, cannot send welcome email. UID:", newAuthUser.uid);
       }
 
-      return newUser as AuthUser;
+      return newAuthUser as AuthUser;
     } catch (error: any) {
       setLoading(false);
-      console.error("signUp: Overall signup error for:", data.email, error.code, error.message);
-      if (newUser && error.code !== 'auth/email-already-in-use' && !error.message.includes("Firestore")) {
-         console.warn("signUp: Attempting to delete Firebase Auth user due to an error after creation but before Firestore (or non-Firestore error). UID:", newUser.uid);
+      // Enhanced error logging for client-side debugging
+      console.error("signUp: CLIENT-SIDE CAUGHT ERROR during overall signup for:", data.email, "Error Code:", error.code, "Error Message:", error.message, "Full Error:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      if (newAuthUser && error.code !== 'auth/email-already-in-use' && !error.message?.includes("Firestore")) {
+         console.warn("signUp: Attempting to delete Firebase Auth user due to an error after creation but before Firestore (or non-Firestore error). UID:", newAuthUser.uid);
          try {
-            await deleteUser(newUser);
-            console.log("signUp: Firebase Auth user deleted successfully due to post-creation error. UID:", newUser.uid);
+            await deleteAuthUser(newAuthUser); // Use aliased import
+            console.log("signUp: Firebase Auth user deleted successfully due to post-creation error. UID:", newAuthUser.uid);
           } catch (deleteError: any) {
-            console.error("signUp: CRITICAL - Failed to delete Firebase Auth user. Orphaned Auth user may exist. UID:", newUser.uid, deleteError);
+            console.error("signUp: CRITICAL - Failed to delete Firebase Auth user. Orphaned Auth user may exist. UID:", newAuthUser.uid, deleteError);
           }
       }
       throw error;
