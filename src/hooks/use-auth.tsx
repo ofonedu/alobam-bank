@@ -22,7 +22,7 @@ import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast";
 import { sendTransactionalEmail, getEmailTemplateAndSubject } from "@/lib/email-service";
-import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions"; // For fetching settings
+import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -196,21 +196,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(newUser as AuthUser);
       setLoading(false);
 
-      // Send welcome email
       if (newUser.email) {
         console.log(`signUp: Preparing to send welcome email to: ${newUser.email}`);
-        // Fetch platform settings to get bankName and emailLogoImageUrl
         const settingsResult = await getPlatformSettingsAction();
-        const bankName = settingsResult.settings?.platformName || "Wohana Funds";
-        const emailLogoImageUrl = settingsResult.settings?.emailLogoImageUrl;
-
+        
         const emailPayload = {
           fullName: constructedDisplayName || "Valued User",
-          bankName: bankName,
-          emailLogoImageUrl: emailLogoImageUrl,
+          bankName: settingsResult.settings?.platformName || "Wohana Funds",
+          emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl, // Pass this to template
           accountNumber: newAccountNumber,
-          loginLink: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
+          loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
         };
+        console.log("signUp: Email payload for template:", emailPayload);
 
         try {
           const emailContent = await getEmailTemplateAndSubject("WELCOME", emailPayload);
@@ -221,23 +218,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               to: newUser.email,
               subject: emailContent.subject,
               htmlBody: emailContent.html,
-              textBody: `Welcome to ${bankName}, ${emailPayload.fullName}! Your account is ready. Login at ${emailPayload.loginLink}`
+              textBody: `Welcome to ${emailPayload.bankName}, ${emailPayload.fullName}! Your account is ready. Account Number: ${emailPayload.accountNumber}. Login at ${emailPayload.loginUrl}`
             })
               .then(emailResult => {
                 if (emailResult.success) {
-                  console.log(`Welcome email sent successfully to: ${newUser.email}. Message: ${emailResult.message}`);
+                  console.log(`signUp: Welcome email sent successfully to: ${newUser.email}. Message: ${emailResult.message}`);
                 } else {
-                  console.error(`Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
+                  console.error(`signUp: Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
                 }
               })
               .catch(emailError => {
-                console.error(`Exception sending welcome email to ${newUser.email}:`, emailError);
+                console.error(`signUp: Exception sending welcome email to ${newUser.email}:`, emailError);
               });
           } else {
-              console.warn(`signUp: Welcome email HTML template not found for type "WELCOME".`);
+              console.warn(`signUp: Welcome email HTML content was null or empty for type "WELCOME".`);
           }
         } catch (emailError: any) {
-            console.error(`Exception preparing welcome email content for ${newUser.email}:`, emailError.message, emailError);
+            console.error(`signUp: Exception preparing welcome email content for ${newUser.email}:`, emailError.message, emailError);
         }
       } else {
         console.warn("signUp: New user has no email, cannot send welcome email. UID:", newUser.uid);
@@ -315,3 +312,5 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
+    
