@@ -9,7 +9,7 @@ import * as emailTemplates from './email-templates';
 
 let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
-let platformNameForEmail: string | null = null;
+let platformNameForEmail: string | null = null; // To store the platform name
 let resendInitialized = false;
 
 async function initializeResendClient(): Promise<boolean> {
@@ -29,22 +29,25 @@ async function initializeResendClient(): Promise<boolean> {
 
       if (!apiKey) {
         console.error("Resend client initialization failed: Resend API Key is MISSING from settings.");
-        platformNameForEmail = pName || "Wohana Funds"; // Set platform name even if API key is missing for other uses
-        resendInitialized = false;
-        resend = null;
-        fromEmailAddress = null; // Ensure fromEmailAddress is null if API key is missing
-        return false;
-      }
-      if (!fromEmail) {
-        console.error("Resend client initialization failed: Resend From Email is MISSING from settings.");
-        platformNameForEmail = pName || "Wohana Funds"; // Set platform name
+        platformNameForEmail = pName || "Wohana Funds";
         resendInitialized = false;
         resend = null;
         fromEmailAddress = null;
         return false;
       }
+      if (!fromEmail) {
+        console.error("Resend client initialization failed: Resend From Email is MISSING from settings.");
+        platformNameForEmail = pName || "Wohana Funds";
+        resendInitialized = false;
+        resend = null;
+        fromEmailAddress = null;
+        return false;
+      }
+      if (!pName) {
+        console.warn("Platform Name is MISSING from settings. Using default 'Wohana Funds' for email display name.");
+      }
 
-      platformNameForEmail = pName || "Wohana Funds"; // Set platform name
+      platformNameForEmail = pName || "Wohana Funds";
       resend = new Resend(apiKey);
       fromEmailAddress = fromEmail;
       resendInitialized = true;
@@ -56,7 +59,7 @@ async function initializeResendClient(): Promise<boolean> {
       resendInitialized = false;
       resend = null;
       fromEmailAddress = null;
-      platformNameForEmail = null;
+      platformNameForEmail = null; // Ensure this is null if settings fail
       return false;
     }
   } catch (error) {
@@ -90,14 +93,24 @@ export async function sendTransactionalEmail(
     };
   }
 
-  // Format "From" to "Display Name <email@example.com>"
-  const formattedFrom = `${platformNameForEmail} <${fromEmailAddress}>`;
+  // Format "From" to "\"Display Name\" <email@example.com>" with quotes around the display name
+  const displayName = platformNameForEmail.replace(/"/g, '\\"'); // Escape any existing quotes in the platform name
+  const formattedFrom = `"${displayName}" <${fromEmailAddress}>`;
   console.log(`Constructed 'From' field for Resend: ${formattedFrom}`);
+  
+  // Log the type and props of the React element
+  console.log("React element to be sent to Resend (typeof):", typeof reactElement);
+  if (reactElement && typeof reactElement === 'object' && reactElement.props) {
+    console.log("React element props:", JSON.stringify(reactElement.props, null, 2));
+  } else {
+    console.log("React element is null, undefined, or has no props.");
+  }
+
 
   try {
     console.log(`Attempting to send email via Resend: To: ${to}, Subject: "${subject}", From: ${formattedFrom}`);
     const { data, error } = await resend.emails.send({
-      from: formattedFrom, // Use the formatted "From" string
+      from: formattedFrom,
       to: [to],
       subject: subject,
       react: reactElement,
@@ -128,25 +141,21 @@ export async function sendTransactionalEmail(
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: string, // Changed from EmailType enum to string
+  emailType: string, 
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; template: React.ReactElement | null }> {
   let currentPlatformName = platformNameForEmail;
   if (!currentPlatformName) {
-    console.log("getEmailTemplateAndSubject: Platform name not pre-fetched, fetching now...");
-    try {
-      const settingsResult = await getPlatformSettingsAction();
-      if (settingsResult.success && settingsResult.settings?.platformName) {
-        currentPlatformName = settingsResult.settings.platformName;
-      } else {
-        currentPlatformName = "Wohana Funds"; 
-        console.warn("getEmailTemplateAndSubject: Could not fetch platform name, using default:", currentPlatformName);
-      }
-    } catch (e) {
-      currentPlatformName = "Wohana Funds";
-      console.warn("getEmailTemplateAndSubject: Exception fetching platform name, using default:", currentPlatformName, e);
+    // Attempt to initialize/fetch if not already done (e.g., if this function is called independently)
+    console.log("getEmailTemplateAndSubject: Platform name not pre-available, attempting to fetch via initializeResendClient...");
+    await initializeResendClient(); // This will set platformNameForEmail
+    currentPlatformName = platformNameForEmail; // Use the potentially updated value
+    if (!currentPlatformName) {
+      currentPlatformName = "Wohana Funds"; // Fallback if still not set
+      console.warn("getEmailTemplateAndSubject: Could not fetch platform name, using default:", currentPlatformName);
     }
   }
+
 
   switch (emailType) {
     case "WELCOME":
