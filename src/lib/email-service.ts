@@ -1,34 +1,55 @@
+
 // src/lib/email-service.ts
 "use server";
 
 import { Resend } from 'resend';
 import type { EmailType, EmailServiceDataPayload, EmailServiceResult, PlatformSettings } from '@/types';
 import { getPlatformSettingsAction } from './actions/admin-settings-actions';
-import * as emailTemplates from './email-templates'; // Import all templates
+import * as emailTemplates from './email-templates.tsx'; // Corrected import
 
-// Placeholder for a more robust configuration loading mechanism
 let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
+let resendInitialized = false; // Track initialization status
 
 async function initializeResendClient(): Promise<boolean> {
-  if (resend && fromEmailAddress) {
-    return true; // Already initialized
+  if (resendInitialized && resend && fromEmailAddress) {
+    console.log("Resend client already initialized.");
+    return true;
   }
+
+  console.log("Attempting to initialize Resend client...");
   try {
-    const settingsResult = await getPlatformSettingsAction();
-    if (settingsResult.success && settingsResult.settings?.resendApiKey && settingsResult.settings?.resendFromEmail) {
-      resend = new Resend(settingsResult.settings.resendApiKey);
-      fromEmailAddress = settingsResult.settings.resendFromEmail;
-      console.log("Resend client initialized successfully.");
-      return true;
+    const settingsResult = await getPlatformSettingsAction(); // Ensure this is awaited
+
+    if (settingsResult.success && settingsResult.settings) {
+      const apiKey = settingsResult.settings.resendApiKey;
+      const fromEmail = settingsResult.settings.resendFromEmail;
+
+      if (apiKey && fromEmail) {
+        resend = new Resend(apiKey);
+        fromEmailAddress = fromEmail;
+        resendInitialized = true;
+        console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}`);
+        return true;
+      } else {
+        console.error("Resend client initialization failed: API key or From Email missing in platform settings.");
+        if (!apiKey) console.error("Resend API Key is missing.");
+        if (!fromEmail) console.error("Resend From Email is missing.");
+        resendInitialized = false;
+        resend = null;
+        fromEmailAddress = null;
+        return false;
+      }
     } else {
-      console.error("Failed to initialize Resend client: API key or From Email missing in platform settings.", settingsResult.error);
+      console.error("Resend client initialization failed: Could not retrieve platform settings.", settingsResult.error);
+      resendInitialized = false;
       resend = null;
       fromEmailAddress = null;
       return false;
     }
   } catch (error) {
-    console.error("Error initializing Resend client from platform settings:", error);
+    console.error("Exception during Resend client initialization:", error);
+    resendInitialized = false;
     resend = null;
     fromEmailAddress = null;
     return false;
@@ -47,8 +68,8 @@ export async function sendTransactionalEmail(
   const isClientInitialized = await initializeResendClient();
 
   if (!isClientInitialized || !resend || !fromEmailAddress) {
-    const errorMsg = "Resend client is not initialized. Check API key and From Email in admin settings.";
-    console.error(`sendTransactionalEmail: ${errorMsg}`);
+    const errorMsg = "Resend client is not initialized. Check API key and From Email in admin settings or server logs for details.";
+    console.error(`sendTransactionalEmail: Aborting send. ${errorMsg}`);
     return {
       success: false,
       message: "Failed to send email: Email service not configured.",
@@ -60,16 +81,16 @@ export async function sendTransactionalEmail(
     console.log(`Attempting to send email via Resend: To: ${to}, Subject: "${subject}", From: ${fromEmailAddress}`);
     const { data, error } = await resend.emails.send({
       from: fromEmailAddress,
-      to: [to], // Resend expects an array of strings for 'to'
+      to: [to],
       subject: subject,
       react: reactElement,
     });
 
     if (error) {
-      console.error(`Resend API Error: ${error.name} - ${error.message}`, error);
+      console.error(`Resend API Error: Name: ${error.name}, Message: ${error.message}. Full Error:`, JSON.stringify(error));
       return {
         success: false,
-        message: `Failed to send email: ${error.message}`,
+        message: `Failed to send email via Resend API: ${error.name} - ${error.message}`,
         error: JSON.stringify(error),
       };
     }
@@ -78,24 +99,33 @@ export async function sendTransactionalEmail(
     return {
       success: true,
       message: "Email sent successfully.",
+      // Optionally include data?.id if needed by the caller
     };
   } catch (exception: any) {
-    console.error("Exception during email sending:", exception);
+    console.error("Exception during resend.emails.send():", exception);
     return {
       success: false,
-      message: `An unexpected error occurred: ${exception.message || 'Unknown error'}`,
-      error: JSON.stringify(exception),
+      message: `An unexpected error occurred while sending email: ${exception.message || 'Unknown exception'}`,
+      error: JSON.stringify(exception, Object.getOwnPropertyNames(exception)), // Serialize full exception
     };
   }
 }
 
-// Helper function to select template and subject based on EmailType
-// This would eventually be used by a Cloud Function or a more abstracted service
 export async function getEmailTemplateAndSubject(
   emailType: EmailType,
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; template: React.ReactElement | null }> {
-  const platformName = "Wohana Funds"; // Or fetch from settings
+  // Fetch platformName from settings or use a default
+  let platformName = "Wohana Funds"; // Default
+  try {
+    const settingsResult = await getPlatformSettingsAction();
+    if (settingsResult.success && settingsResult.settings?.platformName) {
+      platformName = settingsResult.settings.platformName;
+    }
+  } catch (e) {
+    console.warn("Could not fetch platform name for email template, using default.", e);
+  }
+
 
   switch (emailType) {
     case EmailType.WELCOME:
@@ -103,7 +133,7 @@ export async function getEmailTemplateAndSubject(
         subject: `Welcome to ${platformName}!`,
         template: emailTemplates.WelcomeEmail({
           userName: payload.userName || "User",
-          loginLink: payload.loginLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login`,
+          loginLink: payload.loginLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
           platformName,
         }),
       };
@@ -112,13 +142,12 @@ export async function getEmailTemplateAndSubject(
         subject: `Reset Your ${platformName} Password`,
         template: emailTemplates.PasswordResetEmail({
           userName: payload.userName || "User",
-          resetLink: payload.resetLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password?token=xyz`, // Placeholder token
+          resetLink: payload.resetLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/reset-password?token=xyz`,
           platformName,
         }),
       };
-    // Add more cases for other email types later
     default:
       console.warn(`No template defined for email type: ${emailType}`);
-      return { subject: "Notification", template: null };
+      return { subject: `Notification from ${platformName}`, template: null };
   }
 }

@@ -203,29 +203,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       // Send welcome email
       if (newUser.email) {
+        console.log(`signUp: Preparing to send welcome email to: ${newUser.email}`);
         const emailPayload = {
           userName: constructedDisplayName || "Valued User",
           loginLink: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`, // Use /dashboard as a generic login landing
         };
-        // Call the async function with await
-        const { subject, template } = await getEmailTemplateAndSubject(EmailType.WELCOME, emailPayload);
         
-        if (template) {
-          console.log(`signUp: Attempting to send welcome email to: ${newUser.email}`);
-          // No need to await sendTransactionalEmail if we don't want signup to hang on it
-          sendTransactionalEmail({ to: newUser.email, subject, reactElement: template })
-            .then(emailResult => {
-              if (emailResult.success) {
-                console.log(`Welcome email sent successfully to: ${newUser.email}`);
-              } else {
-                console.error(`Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
-              }
-            })
-            .catch(emailError => {
-              console.error(`Exception sending welcome email to ${newUser.email}:`, emailError);
-            });
-        } else {
-            console.warn(`signUp: Welcome email template not found for type ${EmailType.WELCOME}.`);
+        try {
+          const { subject, template } = await getEmailTemplateAndSubject(EmailType.WELCOME, emailPayload);
+          
+          if (template) {
+            console.log(`signUp: Attempting to send welcome email. Subject: "${subject}"`);
+            // No need to await sendTransactionalEmail if we don't want signup to hang on it
+            // Fire and forget, but log the outcome.
+            sendTransactionalEmail({ to: newUser.email, subject, reactElement: template })
+              .then(emailResult => {
+                if (emailResult.success) {
+                  console.log(`Welcome email sent successfully to: ${newUser.email}. Message: ${emailResult.message}`);
+                } else {
+                  console.error(`Failed to send welcome email to ${newUser.email}: ${emailResult.message}`, emailResult.error);
+                }
+              })
+              .catch(emailError => {
+                console.error(`Exception sending welcome email to ${newUser.email}:`, emailError);
+              });
+          } else {
+              console.warn(`signUp: Welcome email template not found for type ${EmailType.WELCOME}.`);
+          }
+        } catch (emailError: any) {
+            console.error(`Exception preparing welcome email content for ${newUser.email}:`, emailError.message, emailError);
         }
       } else {
         console.warn("signUp: New user has no email, cannot send welcome email. UID:", newUser.uid);
@@ -305,5 +311,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    
