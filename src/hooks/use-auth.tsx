@@ -16,12 +16,12 @@ import {
   deleteUser
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import type { AuthUser, UserProfile, EmailType } from "@/types"; // Added EmailType
+import type { AuthUser, UserProfile, EmailType } from "@/types"; // Corrected import
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast"; 
-import { sendTransactionalEmail, getEmailTemplateAndSubject } from "@/lib/email-service"; // Added imports
+import { sendTransactionalEmail, getEmailTemplateAndSubject } from "@/lib/email-service";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -210,6 +210,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         };
         
         try {
+          // Ensure EmailType is correctly referenced here
           const { subject, template } = await getEmailTemplateAndSubject(EmailType.WELCOME, emailPayload);
           
           if (template) {
@@ -311,3 +312,5 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
+    
