@@ -1,3 +1,4 @@
+
 // src/hooks/use-auth.tsx
 "use client";
 
@@ -16,11 +17,12 @@ import {
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import type { AuthUser, UserProfile } from "@/types";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast"; 
-import { sendTransactionalEmail } from '@/lib/email-service';
+
+// Removed import { sendTransactionalEmail } from '@/lib/email-service';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -46,7 +48,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const userDoc = await getDoc(userDocRef);
       if (userDoc.exists()) {
-        setUserProfile(userDoc.data() as UserProfile);
+        const data = userDoc.data() as Partial<UserProfile>;
+        const primaryCurrency = data.primaryCurrency || "USD";
+        const balances = (typeof data.balances === 'object' && data.balances !== null) ? data.balances : { [primaryCurrency]: 0 };
+        if (balances[primaryCurrency] === undefined) {
+          balances[primaryCurrency] = 0;
+        }
+        setUserProfile({ ...data, uid, primaryCurrency, balances } as UserProfile);
       } else {
         console.warn(`User profile document not found for UID: ${uid}. User might be new or data is missing.`);
         setUserProfile(null); 
@@ -96,25 +104,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const firebaseUser = userCredential.user;
       console.log(`signIn: Firebase sign-in successful for UID: ${firebaseUser.uid}`);
       
-      console.log(`signIn: Fetching user profile for UID: ${firebaseUser.uid}`);
-      const userDocRef = doc(db, "users", firebaseUser.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        const profileData = userDoc.data() as UserProfile;
-        console.log(`signIn: User profile fetched successfully for: ${data.email}`, profileData);
-        if (profileData.isSuspended) {
+      await fetchUserProfile(firebaseUser.uid);
+      // The isSuspended check will now be handled by the fetchUserProfile updating userProfile state,
+      // which downstream components can react to, or can be checked directly after fetch completes if needed.
+      // For immediate effect upon sign-in for this specific session if userProfile is not null:
+      if (userProfile?.isSuspended) {
           await firebaseSignOut(auth); 
           setUser(null);
           setUserProfile(null);
           setLoading(false);
           console.warn(`signIn: User ${data.email} (UID: ${firebaseUser.uid}) is suspended. Denying login.`);
           throw { code: 'auth/user-disabled', message: 'Your account has been suspended. Please contact support.' };
-        }
-        setUserProfile(profileData);
-      } else {
-        setUserProfile(null);
-        console.warn(`signIn: User profile not found after login for UID: ${firebaseUser.uid}. This is unexpected for an existing user.`);
       }
       
       setUser(firebaseUser as AuthUser); 
@@ -140,6 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
       const initialBalance = 0; 
       const constructedDisplayName = `${data.firstName} ${data.lastName}`;
+      const primaryCurrency = data.currency || "USD";
       
       const newUserProfileData: UserProfile = {
         uid: newUser.uid,
@@ -150,10 +151,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: null, 
         phoneNumber: data.phoneNumber || undefined,
         accountType: data.accountType || "user_default_type", // Default if none selected/available
-        currency: data.currency,
+        primaryCurrency: primaryCurrency,
+        balances: { [primaryCurrency]: initialBalance }, // Initialize balances map
         kycStatus: "not_started",
-        role: data.email === "admin@wohana.com" ? "admin" : "user", 
-        balance: initialBalance,
+        role: data.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "admin" : "user", // Use env var for admin email
         accountNumber: newAccountNumber,
         isFlagged: false,
         accountHealthScore: 75, 
@@ -167,7 +168,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("signUp: Firestore profile created successfully for UID:", newUser.uid);
       } catch (firestoreError: any) {
         console.error("signUp: CRITICAL - Failed to create Firestore profile for UID:", newUser.uid, firestoreError);
-        // Attempt to delete the Firebase Auth user if Firestore profile creation fails
         if (newUser) {
           console.warn("signUp: Attempting to delete Firebase Auth user due to Firestore profile creation failure. UID:", newUser.uid);
           try {
@@ -177,53 +177,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.error("signUp: CRITICAL - Failed to delete Firebase Auth user after Firestore failure. Orphaned Auth user may exist. UID:", newUser.uid, deleteError);
           }
         }
-        throw firestoreError; // Re-throw the Firestore error to fail the signup
+        throw firestoreError; 
       }
       
       setUserProfile(newUserProfileData);
-      setUser(newUser as AuthUser); // setUser must be AuthUser
+      setUser(newUser as AuthUser); 
       
-      // Send Welcome Email (best effort, do not block signup if email fails)
-      if (newUser.email) {
-        try {
-          console.log("signUp: Attempting to send welcome email to:", newUser.email);
-          const welcomeEmailResult = await sendTransactionalEmail({
-              userId: newUser.uid, // Pass userId to allow email service to fetch details if needed
-              emailType: "WELCOME_EMAIL",
-              data: { 
-                  // toEmail and fullName/firstName will be fetched by email-service if not provided here
-                  loginLink: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/login`,
-                  accountNumber: newAccountNumber,
-              }
-          });
-          if (welcomeEmailResult.success) {
-            console.log("signUp: Welcome email queued successfully for:", newUser.email);
-          } else {
-            console.warn("signUp: Failed to queue welcome email for:", newUser.email, "Error:", welcomeEmailResult.message, welcomeEmailResult.error);
-            toast({
-              title: "Account Created",
-              description: "Your account was created, but we couldn't send the welcome email. Please contact support if needed.",
-              variant: "default", // Not destructive, as account creation succeeded
-              duration: 7000,
-            });
-          }
-        } catch (emailError: any) {
-          console.error("signUp: Error during welcome email sending process for:", newUser.email, emailError);
-           toast({
-              title: "Account Created (Email Issue)",
-              description: "Your account was created, but there was an issue sending the welcome email.",
-              variant: "default",
-              duration: 7000,
-            });
-        }
-      }
+      // Removed welcome email sending logic
+      // console.log("signUp: Welcome email sending skipped as email service is removed/disabled.");
 
       setLoading(false);
-      return newUser as AuthUser; // Return AuthUser
+      return newUser as AuthUser;
     } catch (error: any) {
       setLoading(false);
       console.error("signUp: Overall signup error for:", data.email, error.code, error.message);
-      // If newUser was created but something else failed before Firestore (unlikely path now)
       if (newUser && error.code !== 'auth/email-already-in-use' && !error.message.includes("Firestore")) {
          console.warn("signUp: Attempting to delete Firebase Auth user due to an error after creation but before Firestore (or non-Firestore error). UID:", newUser.uid);
          try {
@@ -292,3 +259,5 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
+    

@@ -4,11 +4,11 @@
 
 import { db, storage } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, PlatformSettings, ClientKYCData, KYCSubmissionResult } from "@/types";
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, ClientKYCData, KYCSubmissionResult } from "@/types";
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
-import { sendTransactionalEmail } from "./email-service";
+// Removed import { sendTransactionalEmail } from "./email-service";
 import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions";
 import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
 
@@ -97,10 +97,12 @@ export async function submitKycAction(
     };
     await updateDoc(userDocRef, userProfileUpdate);
 
+    // Removed email sending logic
+    // console.log("submitKycAction: KYC submitted email sending skipped.");
+
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
 
-    // Prepare serializable data for the client
     const serializableKycData: ClientKYCData = {
       userId: newKycDataForFirestore.userId,
       fullName: newKycDataForFirestore.fullName,
@@ -111,7 +113,6 @@ export async function submitKycAction(
       photoFileName: newKycDataForFirestore.photoFileName,
       status: newKycDataForFirestore.status,
       submittedAt: (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString(),
-      // reviewedAt, reviewedBy, rejectionReason are not set here
     };
 
     return {
@@ -140,7 +141,6 @@ export async function fetchKycData(userId: string): Promise<KYCData | null> {
   const kycDocSnap = await getDoc(kycDocRef);
   if (kycDocSnap.exists()) {
     const data = kycDocSnap.data();
-    // Convert Timestamps to Dates for internal use if needed, or return as is if action handles it
     const kycResult: KYCData = {
       userId: data.userId,
       fullName: data.fullName,
@@ -193,12 +193,13 @@ export async function recordTransferAction(
     const settingsResult = await getPlatformSettingsAction();
     let cotPercentageToUse = platformCotPercentage;
     if (cotPercentageToUse === undefined || cotPercentageToUse === null) {
-        cotPercentageToUse = settingsResult.settings?.cotPercentage ?? 0.01; // Default to 1% if not set
+        cotPercentageToUse = settingsResult.settings?.cotPercentage ?? 0.01; 
     }
-
 
     const cotAmount = transferData.amount * cotPercentageToUse;
     const totalDeduction = transferData.amount + cotAmount;
+    const transactionCurrency = 'currency' in transferData ? transferData.currency : "USD";
+
 
     let cotCodeId: string | undefined;
     let imfCodeId: string | undefined;
@@ -233,14 +234,18 @@ export async function recordTransferAction(
         throw new Error("User profile not found within transaction.");
       }
       const userProfileData = freshUserDoc.data() as UserProfile;
+      const currentBalances = userProfileData.balances || {};
+      const balanceForCurrency = currentBalances[transactionCurrency] || 0;
 
-      const currentBalance = userProfileData.balance;
-      if (currentBalance < totalDeduction) {
-        throw new Error("Insufficient funds to complete the transfer including fees.");
+
+      if (balanceForCurrency < totalDeduction) {
+        throw new Error(`Insufficient funds in ${transactionCurrency} to complete the transfer including fees. Required: ${totalDeduction.toFixed(2)}, Available: ${balanceForCurrency.toFixed(2)}`);
       }
 
-      const updatedBalance = currentBalance - totalDeduction;
-      transaction.update(userDocRef, { balance: updatedBalance });
+      const updatedBalanceForCurrency = parseFloat((balanceForCurrency - totalDeduction).toFixed(2));
+      const newBalances = { ...currentBalances, [transactionCurrency]: updatedBalanceForCurrency };
+
+      transaction.update(userDocRef, { balances: newBalances });
 
       const recipientDetails: Partial<TransactionType['recipientDetails']> = {};
       if (transferData.recipientName) recipientDetails.name = transferData.recipientName;
@@ -273,48 +278,31 @@ export async function recordTransferAction(
         amount: -transferData.amount,
         type: "transfer",
         status: "completed",
-        currency: 'currency' in transferData ? transferData.currency : "USD",
+        currency: transactionCurrency,
         ...(Object.keys(recipientDetails).length > 0 && { recipientDetails: recipientDetails as TransactionType['recipientDetails'] }),
         ...(Object.keys(authDetailsToSave).length > 1 && { authorizationDetails: authDetailsToSave as AuthorizationDetails }),
       };
       const transactionDocRef = doc(collection(db, "transactions"));
       transaction.set(transactionDocRef, newTransactionData);
+      
+      const firestoreBatchForCodesInsideTx = writeBatch(db); // This is conceptual, actual batch update happens outside
+      if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodesInsideTx);
+      if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodesInsideTx);
+      if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodesInsideTx);
+      // Note: Committing this batch here would be an anti-pattern for Firestore transactions.
+      // It's better to collect IDs and commit after the main transaction.
 
-      // Mark codes as used *within the same Firestore transaction* if possible, or immediately after.
-      // For now, we'll do it after the main transaction commits, in a separate batch.
-      // This is because the markCodeAsUsed function itself does a revalidatePath which isn't ideal inside a transaction.
-      // A more robust solution would be to pass the `transaction` object to `markCodeAsUsed`.
-
-      return { balance: updatedBalance, transactionId: transactionDocRef.id };
+      return { balance: updatedBalanceForCurrency, transactionId: transactionDocRef.id, currency: transactionCurrency };
     });
 
-    // Post-transaction: Mark codes as used in a separate batch
     const firestoreBatchForCodes = writeBatch(db);
     if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodes);
     if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
     if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
-    await firestoreBatchForCodes.commit();
+    await firestoreBatchForCodes.commit().catch(err => console.error("Error committing code usage batch:", err));
 
-
-    if (userProfile.email && transactionResult.transactionId) {
-      await sendTransactionalEmail({
-        userId: userId,
-        emailType: "TRANSFER_SUCCESS",
-        data: {
-          accountNumber: userProfile.accountNumber,
-          amount: transferData.amount,
-          currency: 'currency' in transferData ? transferData.currency : "USD",
-          recipientName: transferData.recipientName,
-          transactionId: transactionResult.transactionId,
-          currentBalance: transactionResult.balance,
-          availableBalance: transactionResult.balance,
-          valueDate: new Date().toLocaleDateString(),
-          time: new Date().toLocaleTimeString(),
-          description: `Transfer to ${transferData.recipientName}`,
-          remarks: transferData.remarks || `Transfer to ${transferData.recipientName}`,
-        },
-      });
-    }
+    // Removed email sending logic
+    // console.log("recordTransferAction: Transfer success email sending skipped.");
 
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/transactions");
@@ -323,27 +311,14 @@ export async function recordTransferAction(
     return {
       success: true,
       message: "Transfer processed successfully.",
-      newBalance: transactionResult.balance,
+      newBalance: transactionResult.balance, // This is the balance of the specific currency
       transactionId: transactionResult.transactionId,
     };
 
   } catch (error: any) {
     console.error("Error recording transfer:", error);
-    const userEmailForFailure = userProfile?.email;
-    if (userEmailForFailure) {
-      await sendTransactionalEmail({
-        userId: userId,
-        emailType: "TRANSFER_FAILED",
-        data: {
-          accountNumber: userProfile.accountNumber,
-          amount: transferData.amount,
-          currency: 'currency' in transferData ? transferData.currency : "USD",
-          recipientName: transferData.recipientName,
-          reason: error.message || "Unknown error",
-          description: `Attempted transfer to ${transferData.recipientName}`,
-        },
-      });
-    }
+    // Removed email sending logic
+    // console.log("recordTransferAction: Transfer failed email sending skipped.");
     return {
       success: false,
       message: error.message || "An unexpected error occurred during transfer processing.",
@@ -504,13 +479,16 @@ export async function submitLoanApplicationAction(
       amount: validatedData.data.amount,
       termMonths: validatedData.data.termMonths,
       purpose: validatedData.data.purpose,
-      interestRate: 0.08,
+      interestRate: 0.08, // Default or from settings
       status: "pending",
       applicationDate: Timestamp.now(),
-      currency: userProfile.currency || "USD",
+      currency: userProfile.primaryCurrency || "USD",
     };
 
     const loanDocRef = await addDoc(loansColRef, newLoanDocData);
+
+    // Removed email sending logic
+    // console.log("submitLoanApplicationAction: Loan application submitted email sending skipped.");
 
     revalidatePath("/dashboard/loans");
     revalidatePath("/admin/loans");
@@ -594,3 +572,5 @@ export async function submitSupportTicketAction(
     };
   }
 }
+
+    

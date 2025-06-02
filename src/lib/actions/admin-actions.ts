@@ -1,3 +1,4 @@
+
 // src/lib/actions/admin-actions.ts
 "use server";
 
@@ -18,7 +19,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
-import { sendTransactionalEmail } from "../email-service";
+// Removed import { sendTransactionalEmail } from "../email-service";
 import { AdminAddUserSchema } from "../schemas";
 import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { getRandomName } from "../utils";
@@ -90,30 +91,8 @@ export async function updateLoanStatusAction(
     const loanDocSnap = await getDoc(loanDocRef);
     const loanData = loanDocSnap.data() as Loan | undefined;
 
-    if (newStatus === "approved" && loanData) {
-      await sendTransactionalEmail({
-        userId,
-        emailType: "LOAN_APPROVED",
-        data: {
-          loanId,
-          loanAmount: loanData.amount,
-          currency: loanData.currency || "USD", 
-          approvalDate: updateData.approvalDate ? new Date(updateData.approvalDate).toLocaleDateString() : "N/A",
-        },
-      });
-    } else if (newStatus === "rejected" && loanData) {
-       await sendTransactionalEmail({
-        userId,
-        emailType: "LOAN_REJECTED",
-        data: {
-          loanId,
-          loanAmount: loanData.amount,
-          currency: loanData.currency || "USD", 
-          rejectionDate: new Date().toLocaleDateString(), 
-          reason: "Application did not meet criteria.", 
-        },
-      });
-    }
+    // Removed email sending logic
+    // console.log(`updateLoanStatusAction: Loan status email sending skipped for status ${newStatus}.`);
 
     revalidatePath("/admin/loans");
     revalidatePath(`/dashboard/loans`); 
@@ -164,10 +143,11 @@ export async function issueManualAdjustmentAction(
   amount: number,
   type: "credit" | "debit",
   description: string,
+  currency: string, // Added currency parameter
   adminUserId?: string 
 ): Promise<ManualAdjustmentResult> {
-  if (!targetUserId || !amount || !description) {
-    return { success: false, message: "Missing required fields for manual adjustment." };
+  if (!targetUserId || !amount || !description || !currency) {
+    return { success: false, message: "Missing required fields for manual adjustment (User ID, Amount, Description, Currency)." };
   }
   if (amount <= 0) {
     return { success: false, message: "Amount must be positive." };
@@ -177,7 +157,7 @@ export async function issueManualAdjustmentAction(
 
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
-    const transactionTypeForRecord: TransactionType['type'] = type;
+    const transactionTypeForRecord: TransactionType['type'] = type === "credit" ? "manual_credit" : "manual_debit";
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
@@ -188,14 +168,17 @@ export async function issueManualAdjustmentAction(
       }
       
       userProfileData = userDoc.data() as UserProfile;
-      const currentBalance = userProfileData.balance;
-      const newBalance = parseFloat((currentBalance + adjustmentAmount).toFixed(2));
+      const currentBalances = userProfileData.balances || {};
+      const balanceForCurrency = currentBalances[currency] || 0;
+      
+      const newBalanceForCurrency = parseFloat((balanceForCurrency + adjustmentAmount).toFixed(2));
 
-      if (newBalance < 0 && type === 'debit') {
-        console.warn(`User ${targetUserId} balance will be negative after this debit.`);
+      if (newBalanceForCurrency < 0 && type === 'debit') {
+        console.warn(`User ${targetUserId} balance for ${currency} will be negative after this debit.`);
       }
       
-      transaction.update(userDocRef, { balance: newBalance });
+      const newBalances = { ...currentBalances, [currency]: newBalanceForCurrency };
+      transaction.update(userDocRef, { balances: newBalances });
 
       const transactionsColRef = collection(db, "transactions");
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
@@ -205,30 +188,16 @@ export async function issueManualAdjustmentAction(
         amount: adjustmentAmount,
         type: transactionTypeForRecord,
         status: "completed",
-        currency: userProfileData.currency || "USD", 
+        currency: currency, 
         notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. Original input reason: ${description}`
       };
-      const transactionDocRef = await addDoc(transactionsColRef, newTransactionData); 
-      return { transactionId: transactionDocRef.id, newBalance, userCurrency: userProfileData.currency || "USD" }; 
+      const transactionDocRef = doc(collection(db, "transactions")); // Create new doc ref
+      transaction.set(transactionDocRef, newTransactionData); 
+      return { transactionId: transactionDocRef.id, newBalance: newBalanceForCurrency, userCurrency: currency }; 
     });
     
-    await sendTransactionalEmail({
-      userId: targetUserId,
-      emailType: type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION",
-      data: {
-        accountNumber: userProfileData?.accountNumber,
-        amount: amount,
-        currency: transactionResult.userCurrency,
-        description: description,
-        transactionId: transactionResult.transactionId,
-        currentBalance: transactionResult.newBalance,
-        availableBalance: transactionResult.newBalance, 
-        valueDate: new Date().toLocaleDateString(),
-        time: new Date().toLocaleTimeString(),
-        location: "Platform Adjustment", // Could be more specific if admin actions are logged with location
-        remarks: description,
-      },
-    });
+    // Removed email sending logic
+    // console.log("issueManualAdjustmentAction: Debit/Credit notification email sending skipped.");
 
     revalidatePath("/admin/financial-ops");
     revalidatePath("/admin/transactions"); 
@@ -238,7 +207,7 @@ export async function issueManualAdjustmentAction(
 
     return {
       success: true,
-      message: `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${userProfileData?.displayName || targetUserId} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`,
+      message: `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${userProfileData?.displayName || targetUserId} processed. New balance for ${transactionResult.userCurrency}: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`,
       transactionId: transactionResult.transactionId,
     };
 
@@ -285,8 +254,8 @@ export async function generateRandomTransactionsAction(
       return { success: false, message: "Target user profile not found." };
     }
     const userProfileData = userDocSnap.data() as UserProfile;
-    let currentBalance = userProfileData.balance; 
-    const userCurrency = userProfileData.currency || "USD";
+    const userCurrency = userProfileData.primaryCurrency || "USD";
+    let currentBalanceForCurrency = (userProfileData.balances || {})[userCurrency] || 0;
 
     const batch = writeBatch(db);
     const transactionsColRef = collection(db, "transactions");
@@ -378,8 +347,9 @@ export async function generateRandomTransactionsAction(
         batch.set(newTransactionRef, txData);
     });
 
-    const newBalance = parseFloat((currentBalance + totalAmountForCompleted).toFixed(2));
-    batch.update(userDocRef, { balance: newBalance });
+    const newBalanceForCurrency = parseFloat((currentBalanceForCurrency + totalAmountForCompleted).toFixed(2));
+    const updatedBalances = { ...(userProfileData.balances || {}), [userCurrency]: newBalanceForCurrency };
+    batch.update(userDocRef, { balances: updatedBalances });
 
     await batch.commit();
 
@@ -391,7 +361,7 @@ export async function generateRandomTransactionsAction(
 
     return { 
       success: true, 
-      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} (from completed transactions) to ${userCurrency} ${newBalance.toFixed(2)}.`, 
+      message: `${count} random transactions generated for user ${userProfileData.displayName || targetUserId}. Balance for ${userCurrency} updated by ${userCurrency} ${totalAmountForCompleted.toFixed(2)} to ${userCurrency} ${newBalanceForCurrency.toFixed(2)}.`, 
       count 
     };
   } catch (error: any) {
@@ -462,11 +432,8 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
     
-    await sendTransactionalEmail({
-      userId,
-      emailType: "KYC_APPROVED", 
-      data: {  },
-    });
+    // Removed email sending logic
+    // console.log("approveKycAction: KYC approved email sending skipped.");
 
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -499,11 +466,8 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
 
-    await sendTransactionalEmail({
-      userId,
-      emailType: "KYC_REJECTED", 
-      data: { reason: rejectionReason },
-    });
+    // Removed email sending logic
+    // console.log("rejectKycAction: KYC rejected email sending skipped.");
 
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -524,7 +488,7 @@ interface TransactionActionResult {
 export async function markTransactionAsCompletedAction(
   transactionId: string,
   userId: string,
-  amount: number 
+  // amount: number // Amount is fetched from transactionData now
 ): Promise<TransactionActionResult> {
   if (!transactionId || !userId) {
     return { success: false, message: "Transaction ID and User ID are required." };
@@ -550,16 +514,17 @@ export async function markTransactionAsCompletedAction(
         throw new Error("Only pending transactions can be marked as completed.");
       }
       
-      if (transactionData.amount !== amount) {
-          console.warn(`Amount mismatch for transaction ${transactionId}. Passed: ${amount}, Stored: ${transactionData.amount}. Using stored amount for balance update.`);
-      }
-
       const userProfileData = userDoc.data() as UserProfile;
-      const currentBalance = userProfileData.balance;
-      const newBalance = parseFloat((currentBalance + transactionData.amount).toFixed(2));
+      const transactionCurrency = transactionData.currency || userProfileData.primaryCurrency || "USD";
+      const currentBalances = userProfileData.balances || {};
+      const balanceForCurrency = currentBalances[transactionCurrency] || 0;
+      
+      const newBalanceForCurrency = parseFloat((balanceForCurrency + transactionData.amount).toFixed(2));
+      const newBalances = { ...currentBalances, [transactionCurrency]: newBalanceForCurrency };
+
 
       firestoreTransaction.update(transactionDocRef, { status: "completed", updatedAt: Timestamp.now() });
-      firestoreTransaction.update(userDocRef, { balance: newBalance });
+      firestoreTransaction.update(userDocRef, { balances: newBalances });
     });
 
     revalidatePath("/admin/transactions");
@@ -610,6 +575,8 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     const newAccountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
     const initialBalance = 0;
     const constructedDisplayName = `${firstName} ${lastName}`;
+    const primaryCurrency = currency || "USD";
+
 
     const newUserProfileData: UserProfile = {
       uid,
@@ -620,10 +587,10 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
       photoURL: null,
       phoneNumber: phoneNumber || undefined,
       accountType: accountType || "default_user_type",
-      currency: currency || "USD",
+      primaryCurrency: primaryCurrency,
+      balances: { [primaryCurrency]: initialBalance },
       kycStatus: "not_started",
       role: role || "user",
-      balance: initialBalance,
       accountNumber: newAccountNumber,
       isFlagged: false,
       accountHealthScore: 75,
@@ -634,14 +601,8 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     await setDoc(userDocRef, newUserProfileData);
     console.log("adminAddUserAction: Firestore profile created successfully for UID:", uid);
     
-    await sendTransactionalEmail({
-      userId: uid,
-      emailType: "WELCOME_EMAIL",
-      data: {
-        loginLink: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9002"}/login`, 
-        accountNumber: newAccountNumber,
-      },
-    });
+    // Removed email sending logic
+    // console.log("adminAddUserAction: Welcome email sending skipped.");
     
     revalidatePath("/admin/users");
     return { success: true, message: "User created successfully.", userId: uid };
@@ -665,3 +626,5 @@ export async function adminAddUserAction(formData: AdminAddUserFormData): Promis
     return { success: false, message: errorMessage, error: error.message };
   }
 }
+
+    

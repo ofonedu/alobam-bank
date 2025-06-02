@@ -7,7 +7,7 @@ import { db } from "@/lib/firebase";
 import { AccountTypeFormSchema, HeroSectionSchema, FeaturesOverviewSectionSchema, AccountOfferingsSectionSchema, DebitCardPromotionSchema, InvestmentOpportunitiesSchema, LoanMortgageServicesSchema, CustomerFeedbackSchema, FinalCTASchema, HeaderNavLinksSchema, FooterContentSchema, GeneralSettingsSchema, KycSettingsSchema, LoanSettingsSchema } from "@/lib/schemas";
 import { collection, addDoc, Timestamp, getDocs, orderBy, query, doc, getDoc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
-import type { AccountType, PlatformSettings, LandingPageContent, NavLinkItem } from "@/types"; // Removed EmailTemplate
+import type { AccountType, PlatformSettings, LandingPageContent, NavLinkItem } from "@/types";
 
 interface AddAccountTypeResult {
   success: boolean;
@@ -69,7 +69,7 @@ export async function getAccountTypesAction(): Promise<GetAccountTypesResult> {
     const q = query(accountTypesColRef, orderBy("name", "asc"));
     const querySnapshot = await getDocs(q);
 
-    const accountTypes: AccountType[] = querySnapshot.docs.map((docSnap) => { // Renamed doc to docSnap for clarity
+    const accountTypes: AccountType[] = querySnapshot.docs.map((docSnap) => { 
       const data = docSnap.data();
       let createdAtDate: Date;
       if (data.createdAt && (data.createdAt as Timestamp)?.toDate) {
@@ -77,7 +77,6 @@ export async function getAccountTypesAction(): Promise<GetAccountTypesResult> {
       } else if (data.createdAt instanceof Date) {
         createdAtDate = data.createdAt;
       } else {
-        // Fallback or error handling for unexpected date format
         createdAtDate = new Date(data.createdAt || Date.now());
       }
       return {
@@ -109,7 +108,19 @@ export async function getPlatformSettingsAction(): Promise<PlatformSettingsResul
         if (docSnap.exists()) {
             return { success: true, settings: docSnap.data() as PlatformSettings };
         }
-        return { success: true, settings: {} as PlatformSettings }; 
+        // If no settings document exists, return default (empty) settings
+        const defaultSettings: PlatformSettings = {
+            platformName: "Wohana Funds", // Default if not set
+            supportEmail: "support@example.com", // Default
+            maintenanceMode: false,
+            cotPercentage: 0.01,
+            requireCOTConfirmation: false,
+            requireIMFAuthorization: false,
+            requireTaxClearance: false,
+            platformLogoText: "Wohana Funds",
+            platformLogoIcon: "ShieldCheck",
+        };
+        return { success: true, settings: defaultSettings }; 
     } catch (error: any) {
         console.error("Error fetching platform settings:", error);
         return { success: false, error: "Failed to fetch platform settings." };
@@ -122,10 +133,12 @@ export async function updatePlatformSettingsAction(
     try {
         const settingsDocRef = doc(db, "settings", "platformConfig");
         await setDoc(settingsDocRef, settings, { merge: true });
-        revalidatePath("/admin/settings");
-        revalidatePath("/"); 
+        revalidatePath("/admin/settings", "layout"); // Revalidate settings page and potentially layout
+        revalidatePath("/", "layout"); // Revalidate home page and layout
+        
+        // Only revalidate AppLogo related paths if logo settings actually changed.
         if (settings.platformLogoText !== undefined || settings.platformLogoIcon !== undefined) {
-            revalidatePath("/components/layout/AppLogo"); // Less ideal, better to force reload or context update
+            revalidatePath("/components/layout/AppLogo", "layout"); 
         }
         return { success: true, message: "Platform settings updated successfully." };
     } catch (error: any) {
@@ -228,13 +241,13 @@ export async function updateLandingPageSectionAction(
     let actualSectionKey = sectionKey;
 
     if (sectionKey === "headerNavLinks") {
-      const validated = HeaderNavLinksSchema.safeParse({ navLinks: sectionData }); // Expects an array directly for navLinks
+      const validated = HeaderNavLinksSchema.safeParse({ navLinks: sectionData }); 
       if (!validated.success) {
         console.error("Validation failed for headerNavLinks:", validated.error.flatten().fieldErrors);
         return { success: false, message: "Invalid header navigation data.", error: JSON.stringify(validated.error.flatten().fieldErrors) };
       }
-      dataToSave = validated.data.navLinks; // Save the array
-      actualSectionKey = "headerNavLinks"; // Ensure this is the key used for Firestore
+      dataToSave = validated.data.navLinks; 
+      actualSectionKey = "headerNavLinks"; 
     } else if (sectionKey === "footerContent") {
       const validated = FooterContentSchema.safeParse(sectionData);
       if (!validated.success) {
@@ -278,5 +291,7 @@ export async function updateLandingPageSectionAction(
     return { success: false, message: `Failed to update ${sectionKey}.`, error: error.message };
   }
 }
+
+// Removed getAllEmailTemplatesAction and updateEmailTemplateAction
 
     

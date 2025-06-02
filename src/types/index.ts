@@ -3,7 +3,7 @@
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Timestamp } from "firebase/firestore";
 import type { z } from "zod";
-import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas"; // KYCFormData added
+import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas"; 
 // KYCSubmissionResult removed from here, will be defined with ClientKYCData
 import type React from 'react';
 import type { ReactNode } from 'react'; // Added ReactNode import
@@ -17,10 +17,12 @@ export interface UserProfile {
   photoURL?: string | null;
   phoneNumber?: string;
   accountType?: string;
-  currency?: string;
+  currency?: string; // This is the primary currency for the user
+  balances?: Record<string, number>; // e.g., { "USD": 1000, "EUR": 500 }
+  primaryCurrency?: string; // e.g., "USD"
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
-  balance: number;
+  // balance: number; // This should be derived from balances[primaryCurrency]
   accountNumber?: string;
   isFlagged?: boolean;
   accountHealthScore?: number;
@@ -41,7 +43,7 @@ export interface Transaction {
   date: Date | Timestamp;
   description: string;
   amount: number;
-  type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment";
+  type: "deposit" | "withdrawal" | "transfer" | "fee" | "credit" | "debit" | "loan_disbursement" | "loan_repayment" | "manual_credit" | "manual_debit";
   status: "pending" | "completed" | "failed";
   currency?: string;
   recipientDetails?: {
@@ -68,6 +70,7 @@ export interface Loan {
   applicationDate: Date | Timestamp;
   approvalDate?: Date | Timestamp;
   purpose?: string;
+  currency?: string;
 }
 
 export interface KYCData {
@@ -165,6 +168,7 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
+  // Removed Resend and Brevo specific fields
 }
 
 // Landing Page Content Types
@@ -417,4 +421,4 @@ export interface AuthorizationCode {
   generatedBy: string; // Admin User ID or "system"
 }
 
-// Removed AI-related types: AIKYCRiskAssessment, AIFeatures, AIKYCRiskInput, AIKYCRiskOutput
+    
