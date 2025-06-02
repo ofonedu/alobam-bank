@@ -1,81 +1,124 @@
+// src/lib/email-service.ts
+"use server";
 
-// src/lib/email-templates.ts
-import * as React from 'react';
+import { Resend } from 'resend';
+import type { EmailType, EmailServiceDataPayload, EmailServiceResult, PlatformSettings } from '@/types';
+import { getPlatformSettingsAction } from './actions/admin-settings-actions';
+import * as emailTemplates from './email-templates'; // Import all templates
 
-interface EmailLayoutProps {
-  children: React.ReactNode;
-  platformName: string;
-  previewText?: string;
+// Placeholder for a more robust configuration loading mechanism
+let resend: Resend | null = null;
+let fromEmailAddress: string | null = null;
+
+async function initializeResendClient(): Promise<boolean> {
+  if (resend && fromEmailAddress) {
+    return true; // Already initialized
+  }
+  try {
+    const settingsResult = await getPlatformSettingsAction();
+    if (settingsResult.success && settingsResult.settings?.resendApiKey && settingsResult.settings?.resendFromEmail) {
+      resend = new Resend(settingsResult.settings.resendApiKey);
+      fromEmailAddress = settingsResult.settings.resendFromEmail;
+      console.log("Resend client initialized successfully.");
+      return true;
+    } else {
+      console.error("Failed to initialize Resend client: API key or From Email missing in platform settings.", settingsResult.error);
+      resend = null;
+      fromEmailAddress = null;
+      return false;
+    }
+  } catch (error) {
+    console.error("Error initializing Resend client from platform settings:", error);
+    resend = null;
+    fromEmailAddress = null;
+    return false;
+  }
 }
 
-const EmailLayout: React.FC<EmailLayoutProps> = ({ children, platformName, previewText }) => (
-  <div style={{ margin: '0', padding: '0', backgroundColor: '#f4f4f4', fontFamily: 'Arial, sans-serif' }}>
-    {previewText && <div style={{ display: 'none', maxHeight: 0, overflow: 'hidden' }}>{previewText}</div>}
-    <style>{`
-      body { margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif; }
-      .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-      .header { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eeeeee; }
-      .header h1 { color: #002147; margin:0; font-size: 24px; }
-      .content { padding: 20px 0; color: #333333; line-height: 1.6; }
-      .content p { margin: 0 0 10px; }
-      .button { display: inline-block; padding: 10px 20px; background-color: #FFD700; color: #002147; text-decoration: none; border-radius: 5px; font-weight: bold; }
-      .footer { text-align: center; padding-top: 20px; border-top: 1px solid #eeeeee; font-size: 12px; color: #777777; }
-    `}</style>
-    <div className="container" style={{ maxWidth: '600px', margin: '20px auto', backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', boxShadow: '0 0 10px rgba(0,0,0,0.1)' }}>
-      <div className="header" style={{ textAlign: 'center', paddingBottom: '20px', borderBottom: '1px solid #eeeeee' }}>
-        <h1 style={{ color: '#002147', margin: '0', fontSize: '24px' }}>{platformName}</h1>
-      </div>
-      <div className="content" style={{ padding: '20px 0', color: '#333333', lineHeight: 1.6 }}>
-        {children}
-      </div>
-      <div className="footer" style={{ textAlign: 'center', paddingTop: '20px', borderTop: '1px solid #eeeeee', fontSize: '12px', color: '#777777' }}>
-        <p>&copy; {new Date().getFullYear()} {platformName}. All rights reserved.</p>
-        <p>If you did not request this email, please ignore it.</p>
-      </div>
-    </div>
-  </div>
-);
-
-
-interface WelcomeEmailProps {
-  userName: string;
-  loginLink: string;
-  platformName: string;
+interface SendEmailParams {
+  to: string;
+  subject: string;
+  reactElement: React.ReactElement;
 }
 
-export const WelcomeEmail: React.FC<WelcomeEmailProps> = ({ userName, loginLink, platformName }) => (
-  <EmailLayout platformName={platformName} previewText={`Welcome to ${platformName}, ${userName}!`}>
-    <p>Hello {userName},</p>
-    <p>Welcome to {platformName}! We're thrilled to have you join our community. Get started by exploring your new account and the features we offer.</p>
-    <p>To log in to your account, please click the button below:</p>
-    <p style={{ textAlign: 'center', margin: '20px 0' }}>
-      <a href={loginLink} className="button" style={{ display: 'inline-block', padding: '10px 20px', backgroundColor: '#FFD700', color: '#002147', textDecoration: 'none', borderRadius: '5px', fontWeight: 'bold' }}>Log In to Your Account</a>
-    </p>
-    <p>If you have any questions, feel free to contact our support team.</p>
-    <p>Best regards,<br />The {platformName} Team</p>
-  </EmailLayout>
-);
+export async function sendTransactionalEmail(
+  { to, subject, reactElement }: SendEmailParams
+): Promise<EmailServiceResult> {
+  const isClientInitialized = await initializeResendClient();
 
-interface PasswordResetEmailProps {
-  userName: string;
-  resetLink: string;
-  platformName: string;
+  if (!isClientInitialized || !resend || !fromEmailAddress) {
+    const errorMsg = "Resend client is not initialized. Check API key and From Email in admin settings.";
+    console.error(`sendTransactionalEmail: ${errorMsg}`);
+    return {
+      success: false,
+      message: "Failed to send email: Email service not configured.",
+      error: errorMsg,
+    };
+  }
+
+  try {
+    console.log(`Attempting to send email via Resend: To: ${to}, Subject: "${subject}", From: ${fromEmailAddress}`);
+    const { data, error } = await resend.emails.send({
+      from: fromEmailAddress,
+      to: [to], // Resend expects an array of strings for 'to'
+      subject: subject,
+      react: reactElement,
+    });
+
+    if (error) {
+      console.error(`Resend API Error: ${error.name} - ${error.message}`, error);
+      return {
+        success: false,
+        message: `Failed to send email: ${error.message}`,
+        error: JSON.stringify(error),
+      };
+    }
+
+    console.log("Email sent successfully via Resend. ID:", data?.id);
+    return {
+      success: true,
+      message: "Email sent successfully.",
+    };
+  } catch (exception: any) {
+    console.error("Exception during email sending:", exception);
+    return {
+      success: false,
+      message: `An unexpected error occurred: ${exception.message || 'Unknown error'}`,
+      error: JSON.stringify(exception),
+    };
+  }
 }
 
-export const PasswordResetEmail: React.FC<PasswordResetEmailProps> = ({ userName, resetLink, platformName }) => (
-  <EmailLayout platformName={platformName} previewText="Reset your password">
-    <p>Hello {userName},</p>
-    <p>We received a request to reset your password for your {platformName} account. If you did not make this request, please ignore this email.</p>
-    <p>To reset your password, click the link below:</p>
-    <p style={{ textAlign: 'center', margin: '20px 0' }}>
-      <a href={resetLink} className="button" style={{ display: 'inline-block', padding: '10px 20px', backgroundColor: '#FFD700', color: '#002147', textDecoration: 'none', borderRadius: '5px', fontWeight: 'bold' }}>Reset Your Password</a>
-    </p>
-    <p>This link will expire in 1 hour for security reasons.</p>
-    <p>If you're having trouble clicking the password reset button, copy and paste the URL below into your web browser:</p>
-    <p><a href={resetLink} style={{wordBreak: 'break-all'}}>{resetLink}</a></p>
-    <p>Thanks,<br />The {platformName} Team</p>
-  </EmailLayout>
-);
+// Helper function to select template and subject based on EmailType
+// This would eventually be used by a Cloud Function or a more abstracted service
+export async function getEmailTemplateAndSubject(
+  emailType: EmailType,
+  payload: EmailServiceDataPayload
+): Promise<{ subject: string; template: React.ReactElement | null }> {
+  const platformName = "Wohana Funds"; // Or fetch from settings
 
-// Add more email templates as React components here later
-// e.g., KYCStatusUpdateEmail, TransferConfirmationEmail, etc.
+  switch (emailType) {
+    case EmailType.WELCOME:
+      return {
+        subject: `Welcome to ${platformName}!`,
+        template: emailTemplates.WelcomeEmail({
+          userName: payload.userName || "User",
+          loginLink: payload.loginLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/login`,
+          platformName,
+        }),
+      };
+    case EmailType.PASSWORD_RESET:
+      return {
+        subject: `Reset Your ${platformName} Password`,
+        template: emailTemplates.PasswordResetEmail({
+          userName: payload.userName || "User",
+          resetLink: payload.resetLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password?token=xyz`, // Placeholder token
+          platformName,
+        }),
+      };
+    // Add more cases for other email types later
+    default:
+      console.warn(`No template defined for email type: ${emailType}`);
+      return { subject: "Notification", template: null };
+  }
+}

@@ -1,4 +1,3 @@
-
 // src/lib/email-service.ts
 "use server";
 
@@ -123,4 +122,3 @@ export async function getEmailTemplateAndSubject(
       return { subject: "Notification", template: null };
   }
 }
-
