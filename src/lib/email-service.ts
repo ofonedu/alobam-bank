@@ -9,12 +9,12 @@ import * as emailTemplates from './email-templates';
 
 let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
-let platformNameForEmail: string | null = null; // Store platform name
+let platformNameForEmail: string | null = null;
 let resendInitialized = false;
 
 async function initializeResendClient(): Promise<boolean> {
   if (resendInitialized && resend && fromEmailAddress && platformNameForEmail) {
-    console.log("Resend client already initialized with all necessary details.");
+    // console.log("Resend client already initialized with all necessary details.");
     return true;
   }
 
@@ -27,35 +27,30 @@ async function initializeResendClient(): Promise<boolean> {
       const fromEmail = settingsResult.settings.resendFromEmail;
       const pName = settingsResult.settings.platformName;
 
-      let allSettingsPresent = true;
       if (!apiKey) {
         console.error("Resend client initialization failed: Resend API Key is MISSING from settings.");
-        allSettingsPresent = false;
+        platformNameForEmail = pName || "Wohana Funds"; // Set platform name even if API key is missing for other uses
+        resendInitialized = false;
+        resend = null;
+        fromEmailAddress = null; // Ensure fromEmailAddress is null if API key is missing
+        return false;
       }
       if (!fromEmail) {
         console.error("Resend client initialization failed: Resend From Email is MISSING from settings.");
-        allSettingsPresent = false;
-      }
-      if (!pName) {
-        console.warn("Resend client initialization: Platform Name is MISSING from settings. Using default.");
-        platformNameForEmail = "Wohana Funds"; // Default if not set
-      } else {
-        platformNameForEmail = pName;
-      }
-
-      if (apiKey && fromEmail) {
-        resend = new Resend(apiKey);
-        fromEmailAddress = fromEmail;
-        resendInitialized = true;
-        console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}`);
-        return true;
-      } else {
+        platformNameForEmail = pName || "Wohana Funds"; // Set platform name
         resendInitialized = false;
         resend = null;
         fromEmailAddress = null;
-        platformNameForEmail = null;
         return false;
       }
+
+      platformNameForEmail = pName || "Wohana Funds"; // Set platform name
+      resend = new Resend(apiKey);
+      fromEmailAddress = fromEmail;
+      resendInitialized = true;
+      console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}`);
+      return true;
+
     } else {
       console.error("Resend client initialization failed: Could not retrieve platform settings.", settingsResult.error);
       resendInitialized = false;
@@ -95,13 +90,14 @@ export async function sendTransactionalEmail(
     };
   }
 
+  // Format "From" to "Display Name <email@example.com>"
   const formattedFrom = `${platformNameForEmail} <${fromEmailAddress}>`;
   console.log(`Constructed 'From' field for Resend: ${formattedFrom}`);
 
   try {
     console.log(`Attempting to send email via Resend: To: ${to}, Subject: "${subject}", From: ${formattedFrom}`);
     const { data, error } = await resend.emails.send({
-      from: formattedFrom, // Use formatted "From" string
+      from: formattedFrom, // Use the formatted "From" string
       to: [to],
       subject: subject,
       react: reactElement,
@@ -132,10 +128,10 @@ export async function sendTransactionalEmail(
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: string,
+  emailType: string, // Changed from EmailType enum to string
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; template: React.ReactElement | null }> {
-  let currentPlatformName = platformNameForEmail; // Use already fetched name if available
+  let currentPlatformName = platformNameForEmail;
   if (!currentPlatformName) {
     console.log("getEmailTemplateAndSubject: Platform name not pre-fetched, fetching now...");
     try {
@@ -143,15 +139,14 @@ export async function getEmailTemplateAndSubject(
       if (settingsResult.success && settingsResult.settings?.platformName) {
         currentPlatformName = settingsResult.settings.platformName;
       } else {
-        currentPlatformName = "Wohana Funds"; // Fallback
+        currentPlatformName = "Wohana Funds"; 
         console.warn("getEmailTemplateAndSubject: Could not fetch platform name, using default:", currentPlatformName);
       }
     } catch (e) {
-      currentPlatformName = "Wohana Funds"; // Fallback
+      currentPlatformName = "Wohana Funds";
       console.warn("getEmailTemplateAndSubject: Exception fetching platform name, using default:", currentPlatformName, e);
     }
   }
-
 
   switch (emailType) {
     case "WELCOME":
