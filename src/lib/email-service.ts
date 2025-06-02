@@ -92,10 +92,10 @@ export async function sendTransactionalEmail(
 
 // Helper function to select template and subject based on EmailType
 // This would eventually be used by a Cloud Function or a more abstracted service
-export function getEmailTemplateAndSubject(
+export async function getEmailTemplateAndSubject(
   emailType: EmailType,
   payload: EmailServiceDataPayload
-): { subject: string; template: React.ReactElement | null } {
+): Promise<{ subject: string; template: React.ReactElement | null }> {
   const platformName = "Wohana Funds"; // Or fetch from settings
 
   switch (emailType) {
@@ -123,3 +123,4 @@ export function getEmailTemplateAndSubject(
       return { subject: "Notification", template: null };
   }
 }
+
