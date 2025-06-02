@@ -29,7 +29,7 @@ export default function AdminFinancialOpsPage() {
   // State for Generate History
   const [selectedUserIdHistory, setSelectedUserIdHistory] = useState<string>('');
   const [numTransactions, setNumTransactions] = useState<string>('5');
-  const [targetNetValue, setTargetNetValue] = useState<string>(''); // New state for target net value
+  const [targetNetValue, setTargetNetValue] = useState<string>(''); 
   const [isGeneratingHistory, setIsGeneratingHistory] = useState(false);
 
   useEffect(() => {
@@ -57,12 +57,21 @@ export default function AdminFinancialOpsPage() {
       toast({ title: "Missing Information", description: "Please select a user, enter an amount, and provide a description.", variant: "destructive" });
       return;
     }
+
+    const targetUser = allUsers.find(u => u.uid === selectedUserIdCharge);
+    if (!targetUser) {
+        toast({ title: "User Not Found", description: "Could not find selected user details.", variant: "destructive" });
+        return;
+    }
+    const userCurrency = targetUser.primaryCurrency || "USD"; // Default to USD if not set
+
     setIsIssuingCharge(true);
     const result = await issueManualAdjustmentAction(
       selectedUserIdCharge,
       parseFloat(amountCharge),
       chargeType,
-      descriptionCharge
+      descriptionCharge,
+      userCurrency // Pass the user's currency
     );
     if (result.success) {
       toast({ title: "Success", description: result.message });
@@ -82,7 +91,9 @@ export default function AdminFinancialOpsPage() {
     }
     setIsGeneratingHistory(true);
     const targetNetValNum = targetNetValue ? parseFloat(targetNetValue) : undefined;
+    console.log(`AdminFinancialOpsPage: Calling generateRandomTransactionsAction for user ${selectedUserIdHistory}, num: ${numTransactions}, targetNet: ${targetNetValNum}`);
     const result = await generateRandomTransactionsAction(selectedUserIdHistory, parseInt(numTransactions), targetNetValNum);
+    console.log(`AdminFinancialOpsPage: Result from generateRandomTransactionsAction:`, result);
     if (result.success) {
       toast({ title: "Success", description: result.message });
       setSelectedUserIdHistory('');
@@ -139,14 +150,14 @@ export default function AdminFinancialOpsPage() {
                     />
                 </div>
                 <div>
-                    <Label htmlFor="chargeType">Type</Label>
+                    <Label htmlFor="chargeTypeSelect">Type</Label>
                      <Select value={chargeType} onValueChange={(value) => setChargeType(value as 'credit' | 'debit')} disabled={isIssuingCharge}>
-                        <SelectTrigger id="chargeType">
-                        <SelectValue />
+                        <SelectTrigger id="chargeTypeSelect">
+                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                        <SelectItem value="debit">Debit (Charge User)</SelectItem>
-                        <SelectItem value="credit">Credit (Fund User)</SelectItem>
+                           <SelectItem value="debit">Debit (Charge User)</SelectItem>
+                           <SelectItem value="credit">Credit (Fund User)</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -225,3 +236,4 @@ export default function AdminFinancialOpsPage() {
     </div>
   );
 }
+

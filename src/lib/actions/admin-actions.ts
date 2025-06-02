@@ -143,13 +143,16 @@ export async function issueManualAdjustmentAction(
   amount: number,
   type: "credit" | "debit",
   description: string,
-  currency: string, // Added currency parameter
+  currency: string, 
   adminUserId?: string 
 ): Promise<ManualAdjustmentResult> {
+  console.log(`issueManualAdjustmentAction: Called for user ${targetUserId}, amount ${amount}, type ${type}, currency ${currency}, desc: ${description}`);
   if (!targetUserId || !amount || !description || !currency) {
+    console.error("issueManualAdjustmentAction: Missing required fields.");
     return { success: false, message: "Missing required fields for manual adjustment (User ID, Amount, Description, Currency)." };
   }
   if (amount <= 0) {
+     console.error("issueManualAdjustmentAction: Amount must be positive.");
     return { success: false, message: "Amount must be positive." };
   }
 
@@ -158,26 +161,33 @@ export async function issueManualAdjustmentAction(
   try {
     const adjustmentAmount = type === "credit" ? amount : -amount;
     const transactionTypeForRecord: TransactionType['type'] = type === "credit" ? "manual_credit" : "manual_debit";
+    console.log(`issueManualAdjustmentAction: Adjustment amount: ${adjustmentAmount}, Tx type: ${transactionTypeForRecord}`);
 
     const transactionResult = await runTransaction(db, async (transaction) => {
       const userDocRef = doc(db, "users", targetUserId);
+      console.log("issueManualAdjustmentAction: Fetching user doc in transaction...");
       const userDoc = await transaction.get(userDocRef);
 
       if (!userDoc.exists()) {
+        console.error(`issueManualAdjustmentAction: Target user profile not found for ID: ${targetUserId}`);
         throw new Error("Target user profile not found.");
       }
       
       userProfileData = userDoc.data() as UserProfile;
+      console.log("issueManualAdjustmentAction: User profile found:", userProfileData.displayName);
       const currentBalances = userProfileData.balances || {};
       const balanceForCurrency = currentBalances[currency] || 0;
+      console.log(`issueManualAdjustmentAction: Current balance for ${currency}: ${balanceForCurrency}`);
       
       const newBalanceForCurrency = parseFloat((balanceForCurrency + adjustmentAmount).toFixed(2));
+      console.log(`issueManualAdjustmentAction: New balance for ${currency} calculated: ${newBalanceForCurrency}`);
 
       if (newBalanceForCurrency < 0 && type === 'debit') {
-        console.warn(`User ${targetUserId} balance for ${currency} will be negative after this debit.`);
+        console.warn(`issueManualAdjustmentAction: User ${targetUserId} balance for ${currency} will be negative after this debit.`);
       }
       
       const newBalances = { ...currentBalances, [currency]: newBalanceForCurrency };
+      console.log("issueManualAdjustmentAction: Updating user doc with new balances:", newBalances);
       transaction.update(userDocRef, { balances: newBalances });
 
       const transactionsColRef = collection(db, "transactions");
@@ -191,11 +201,13 @@ export async function issueManualAdjustmentAction(
         currency: currency, 
         notes: `Manual adjustment by admin: ${adminUserId || 'System Action'}. Original input reason: ${description}`
       };
-      const transactionDocRef = doc(collection(db, "transactions")); // Create new doc ref
+      const transactionDocRef = doc(collection(db, "transactions")); 
+      console.log("issueManualAdjustmentAction: Setting new transaction doc with data:", newTransactionData);
       transaction.set(transactionDocRef, newTransactionData); 
       return { transactionId: transactionDocRef.id, newBalance: newBalanceForCurrency, userCurrency: currency }; 
     });
     
+    console.log("issueManualAdjustmentAction: Transaction successful. Result:", transactionResult);
     // Removed email sending logic
     // console.log("issueManualAdjustmentAction: Debit/Credit notification email sending skipped.");
 
@@ -212,7 +224,7 @@ export async function issueManualAdjustmentAction(
     };
 
   } catch (error: any) {
-    console.error("Error issuing manual adjustment:", error);
+    console.error("issueManualAdjustmentAction: Error during manual adjustment:", error);
     return {
       success: false,
       message: error.message || "Failed to issue manual adjustment.",
@@ -239,23 +251,29 @@ export async function generateRandomTransactionsAction(
   count: number,
   targetNetValue?: number
 ): Promise<GenerateRandomTransactionsResult> {
+  console.log(`generateRandomTransactionsAction: Initiated for user ${targetUserId}, count ${count}, targetNetValue ${targetNetValue}`);
   if (!targetUserId || count <= 0) {
+    console.error("generateRandomTransactionsAction: User ID and a positive count are required.");
     return { success: false, message: "User ID and a positive count are required." };
   }
   if (count > 50) { 
+    console.error("generateRandomTransactionsAction: Cannot generate more than 50 transactions.");
     return { success: false, message: "Cannot generate more than 50 transactions at once." };
   }
 
   try {
     const userDocRef = doc(db, "users", targetUserId);
+    console.log("generateRandomTransactionsAction: Fetching user document...");
     const userDocSnap = await getDoc(userDocRef);
 
     if (!userDocSnap.exists()) {
+      console.error(`generateRandomTransactionsAction: Target user profile not found for ID: ${targetUserId}`);
       return { success: false, message: "Target user profile not found." };
     }
     const userProfileData = userDocSnap.data() as UserProfile;
     const userCurrency = userProfileData.primaryCurrency || "USD";
     let currentBalanceForCurrency = (userProfileData.balances || {})[userCurrency] || 0;
+    console.log(`generateRandomTransactionsAction: Starting for user ${userProfileData.displayName || targetUserId}. Initial balance for ${userCurrency}: ${currentBalanceForCurrency}. Target Net Value: ${targetNetValue}`);
 
     const batch = writeBatch(db);
     const transactionsColRef = collection(db, "transactions");
@@ -300,9 +318,9 @@ export async function generateRandomTransactionsAction(
       }
 
       if (amount > 0) {
-        type = getRandomElement(["deposit", "credit"]);
+        type = getRandomElement(["deposit", "credit", "manual_credit"]);
       } else {
-        type = getRandomElement(["withdrawal", "fee", "debit", "transfer"]);
+        type = getRandomElement(["withdrawal", "fee", "debit", "transfer", "manual_debit"]);
       }
       
       let counterpartName = "";
@@ -335,23 +353,30 @@ export async function generateRandomTransactionsAction(
         currency: userCurrency,
         isFlagged: Math.random() < 0.05, 
       };
+      console.log(`generateRandomTransactionsAction: Generated tx ${i+1}/${count}: Amount: ${transactionData.amount}, Type: ${transactionData.type}, Status: ${transactionData.status}, Currency: ${transactionData.currency}`);
       generatedTransactions.push(transactionData);
 
       if (status === 'completed') { 
         totalAmountForCompleted += amount;
+        console.log(`generateRandomTransactionsAction: Tx ${i+1} is 'completed'. totalAmountForCompleted updated to: ${totalAmountForCompleted.toFixed(2)}`);
       }
     }
     
+    console.log(`generateRandomTransactionsAction: Loop finished. Total amount for 'completed' transactions: ${totalAmountForCompleted.toFixed(2)}`);
+    const newBalanceForCurrency = parseFloat((currentBalanceForCurrency + totalAmountForCompleted).toFixed(2));
+    const updatedBalances = { ...(userProfileData.balances || {}), [userCurrency]: newBalanceForCurrency };
+    console.log(`generateRandomTransactionsAction: Calculated new balance for ${userCurrency}: ${newBalanceForCurrency}. Updating user doc with balances:`, updatedBalances);
+    batch.update(userDocRef, { balances: updatedBalances });
+
     generatedTransactions.forEach(txData => {
         const newTransactionRef = doc(collection(db, "transactions")); 
         batch.set(newTransactionRef, txData);
     });
-
-    const newBalanceForCurrency = parseFloat((currentBalanceForCurrency + totalAmountForCompleted).toFixed(2));
-    const updatedBalances = { ...(userProfileData.balances || {}), [userCurrency]: newBalanceForCurrency };
-    batch.update(userDocRef, { balances: updatedBalances });
-
+    console.log(`generateRandomTransactionsAction: Added ${generatedTransactions.length} transaction sets to batch.`);
+    
+    console.log(`generateRandomTransactionsAction: Committing batch...`);
     await batch.commit();
+    console.log(`generateRandomTransactionsAction: Batch committed successfully for user ${targetUserId}.`);
 
     revalidatePath("/admin/transactions");
     revalidatePath("/admin/financial-ops");
@@ -365,7 +390,7 @@ export async function generateRandomTransactionsAction(
       count 
     };
   } catch (error: any) {
-    console.error("Error generating random transactions:", error);
+    console.error(`generateRandomTransactionsAction: Error for user ${targetUserId}:`, error);
     return {
       success: false,
       message: "Failed to generate random transactions.",
