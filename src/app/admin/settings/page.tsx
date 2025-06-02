@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail, Percent } from "lucide-react";
+import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail, Percent, Image as ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getPlatformSettingsAction, updatePlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 import type { PlatformSettings } from "@/types";
@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GeneralSettingsSchema, KycSettingsSchema, LoanSettingsSchema, type GeneralSettingsFormData, type KycSettingsFormData, type LoanSettingsFormData } from "@/lib/schemas";
-import { Form, FormField, FormItem, FormControl, FormMessage, FormDescription } from "@/components/ui/form"; 
+import { Form, FormField, FormItem, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
 
 export default function AdminSettingsPage() {
   const { toast } = useToast();
@@ -39,6 +39,7 @@ export default function AdminSettingsPage() {
       requireTaxClearance: false,
       platformLogoText: "Wohana Funds",
       platformLogoIcon: "ShieldCheck",
+      emailLogoImageUrl: "/images/default-email-logo.png", // Default placeholder
       resendApiKey: "",
       resendFromEmail: "",
     },
@@ -68,6 +69,7 @@ export default function AdminSettingsPage() {
           requireTaxClearance: result.settings.requireTaxClearance || false,
           platformLogoText: result.settings.platformLogoText || "Wohana Funds",
           platformLogoIcon: result.settings.platformLogoIcon || "ShieldCheck",
+          emailLogoImageUrl: result.settings.emailLogoImageUrl || "/images/default-email-logo.png",
           resendApiKey: result.settings.resendApiKey || "",
           resendFromEmail: result.settings.resendFromEmail || "",
         });
@@ -93,10 +95,8 @@ export default function AdminSettingsPage() {
     const result = await updatePlatformSettingsAction(data);
     if (result.success) {
       toast({ title: "Success", description: `${section} settings saved.` });
-      if (section === "General & Platform" || section === "Transfer Authorization" || section === "Email (Resend)") { // Reload if logo or core platform settings change
-        // Consider more granular updates or context instead of full reload for better UX
-        // For now, reload is simple and ensures all parts of the app get the new settings.
-        window.location.reload(); 
+      if (section === "General & Platform" || section === "Transfer Authorization" || section === "Email (Resend)") {
+        window.location.reload();
       }
     } else {
       toast({ title: "Error", description: result.message || `Failed to save ${section.toLowerCase()} settings.`, variant: "destructive" });
@@ -133,7 +133,7 @@ export default function AdminSettingsPage() {
         <h1 className="text-3xl font-bold">System Settings</h1>
         <p className="text-muted-foreground">Configure platform-wide settings and parameters.</p>
       </div>
-      
+
       <Form {...generalForm}>
         <form onSubmit={generalForm.handleSubmit(onGeneralSubmit)} className="space-y-0">
           <Card>
@@ -194,7 +194,22 @@ export default function AdminSettingsPage() {
                   )}
                 />
               </div>
-              
+
+              <FormField
+                control={generalForm.control}
+                name="emailLogoImageUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <Label htmlFor="emailLogoImageUrl" className="flex items-center gap-1">
+                      <ImageIcon className="h-4 w-4 text-muted-foreground" /> Email Logo Image URL
+                    </Label>
+                    <FormControl><Input id="emailLogoImageUrl" placeholder="/images/email-logo.png or https://example.com/logo.png" {...field} /></FormControl>
+                    <FormDescription className="text-xs">URL for the logo to be used in emails. Can be a local path (e.g., /images/logo.png) or an absolute URL.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className="grid md:grid-cols-2 gap-6">
                  <FormField
                   control={generalForm.control}
@@ -323,7 +338,7 @@ export default function AdminSettingsPage() {
                 )}
               />
             </CardContent>
-             <CardContent> 
+             <CardContent>
                 <Button type="submit" disabled={isSavingGeneral}>
                     {isSavingGeneral ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Save General, Transfer & Email Settings
@@ -415,7 +430,7 @@ export default function AdminSettingsPage() {
           </Card>
         </form>
       </Form>
-      
+
       <Form {...loanForm}>
         <form onSubmit={loanForm.handleSubmit(onLoanSubmit)} className="space-y-0">
           <Card>

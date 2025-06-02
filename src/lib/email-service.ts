@@ -9,12 +9,12 @@ import * as emailTemplates from './email-templates';
 
 let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
-let platformNameForEmail: string | null = null; // To store the platform name
+let platformNameForEmail: string | null = null;
+let emailLogoImageUrlForEmail: string | undefined = undefined;
 let resendInitialized = false;
 
 async function initializeResendClient(): Promise<boolean> {
   if (resendInitialized && resend && fromEmailAddress && platformNameForEmail) {
-    // console.log("Resend client already initialized with all necessary details.");
     return true;
   }
 
@@ -26,10 +26,12 @@ async function initializeResendClient(): Promise<boolean> {
       const apiKey = settingsResult.settings.resendApiKey;
       const fromEmail = settingsResult.settings.resendFromEmail;
       const pName = settingsResult.settings.platformName;
+      const emailLogoUrl = settingsResult.settings.emailLogoImageUrl;
 
       if (!apiKey) {
         console.error("Resend client initialization failed: Resend API Key is MISSING from settings.");
-        platformNameForEmail = pName || "Wohana Funds";
+        platformNameForEmail = pName || "Wohana Funds"; // Still set platform name for template
+        emailLogoImageUrlForEmail = emailLogoUrl;
         resendInitialized = false;
         resend = null;
         fromEmailAddress = null;
@@ -38,6 +40,7 @@ async function initializeResendClient(): Promise<boolean> {
       if (!fromEmail) {
         console.error("Resend client initialization failed: Resend From Email is MISSING from settings.");
         platformNameForEmail = pName || "Wohana Funds";
+        emailLogoImageUrlForEmail = emailLogoUrl;
         resendInitialized = false;
         resend = null;
         fromEmailAddress = null;
@@ -48,10 +51,11 @@ async function initializeResendClient(): Promise<boolean> {
       }
 
       platformNameForEmail = pName || "Wohana Funds";
+      emailLogoImageUrlForEmail = emailLogoUrl;
       resend = new Resend(apiKey);
       fromEmailAddress = fromEmail;
       resendInitialized = true;
-      console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}`);
+      console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}, Email Logo URL: ${emailLogoImageUrlForEmail}`);
       return true;
 
     } else {
@@ -59,7 +63,8 @@ async function initializeResendClient(): Promise<boolean> {
       resendInitialized = false;
       resend = null;
       fromEmailAddress = null;
-      platformNameForEmail = null; // Ensure this is null if settings fail
+      platformNameForEmail = null;
+      emailLogoImageUrlForEmail = undefined;
       return false;
     }
   } catch (error) {
@@ -68,6 +73,7 @@ async function initializeResendClient(): Promise<boolean> {
     resend = null;
     fromEmailAddress = null;
     platformNameForEmail = null;
+    emailLogoImageUrlForEmail = undefined;
     return false;
   }
 }
@@ -75,16 +81,17 @@ async function initializeResendClient(): Promise<boolean> {
 interface SendEmailParams {
   to: string;
   subject: string;
-  reactElement: React.ReactElement;
+  htmlBody: string; // Changed from reactElement to htmlBody
+  textBody?: string; // Optional text version
 }
 
 export async function sendTransactionalEmail(
-  { to, subject, reactElement }: SendEmailParams
+  { to, subject, htmlBody, textBody }: SendEmailParams
 ): Promise<EmailServiceResult> {
   const isClientInitialized = await initializeResendClient();
 
   if (!isClientInitialized || !resend || !fromEmailAddress || !platformNameForEmail) {
-    const errorMsg = "Resend client is not initialized or platform name/from email is missing. Check API key, From Email, and Platform Name in admin settings or server logs for details.";
+    const errorMsg = "Resend client is not initialized or platform name/from email is missing. Check API key, From Email, Platform Name, and Email Logo URL in admin settings or server logs for details.";
     console.error(`sendTransactionalEmail: Aborting send. ${errorMsg}`);
     return {
       success: false,
@@ -93,18 +100,15 @@ export async function sendTransactionalEmail(
     };
   }
 
-  // Format "From" to "\"Display Name\" <email@example.com>" with quotes around the display name
-  const displayName = platformNameForEmail.replace(/"/g, '\\"'); // Escape any existing quotes in the platform name
+  const displayName = platformNameForEmail.replace(/"/g, '\\"');
   const formattedFrom = `"${displayName}" <${fromEmailAddress}>`;
   console.log(`Constructed 'From' field for Resend: ${formattedFrom}`);
-  
-  // Log the type and props of the React element
-  console.log("React element to be sent to Resend (typeof):", typeof reactElement);
-  if (reactElement && typeof reactElement === 'object' && reactElement.props) {
-    console.log("React element props:", JSON.stringify(reactElement.props, null, 2));
-  } else {
-    console.log("React element is null, undefined, or has no props.");
+
+  if (!htmlBody || typeof htmlBody !== 'string' || htmlBody.trim() === '') {
+    console.error("sendTransactionalEmail: HTML body is empty or invalid.");
+    return { success: false, message: "Email content is empty.", error: "HTML body generation failed." };
   }
+  console.log("HTML body to be sent (first 100 chars):", htmlBody.substring(0, 100));
 
 
   try {
@@ -113,7 +117,8 @@ export async function sendTransactionalEmail(
       from: formattedFrom,
       to: [to],
       subject: subject,
-      react: reactElement,
+      html: htmlBody, // Use html property for HTML string
+      text: textBody || subject, // Basic text fallback
     });
 
     if (error) {
@@ -141,43 +146,43 @@ export async function sendTransactionalEmail(
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: string, 
+  emailType: string, // Changed from EmailType enum to string
   payload: EmailServiceDataPayload
-): Promise<{ subject: string; template: React.ReactElement | null }> {
-  let currentPlatformName = platformNameForEmail;
-  if (!currentPlatformName) {
-    // Attempt to initialize/fetch if not already done (e.g., if this function is called independently)
-    console.log("getEmailTemplateAndSubject: Platform name not pre-available, attempting to fetch via initializeResendClient...");
-    await initializeResendClient(); // This will set platformNameForEmail
-    currentPlatformName = platformNameForEmail; // Use the potentially updated value
-    if (!currentPlatformName) {
-      currentPlatformName = "Wohana Funds"; // Fallback if still not set
-      console.warn("getEmailTemplateAndSubject: Could not fetch platform name, using default:", currentPlatformName);
-    }
+): Promise<{ subject: string; html: string | null }> { // Changed template to html
+  
+  // Ensure client is initialized to fetch platformName and emailLogoImageUrl
+  if (!resendInitialized) {
+    await initializeResendClient();
   }
+  
+  const currentPlatformName = platformNameForEmail || "Wohana Funds"; // Fallback
+  const currentEmailLogoUrl = emailLogoImageUrlForEmail; // Use the fetched one
 
+  const templatePayload = {
+    ...payload,
+    bankName: currentPlatformName,
+    emailLogoImageUrl: currentEmailLogoUrl,
+  };
 
   switch (emailType) {
     case "WELCOME":
       return {
         subject: `Welcome to ${currentPlatformName}!`,
-        template: emailTemplates.WelcomeEmail({
-          userName: payload.userName || "User",
-          loginLink: payload.loginLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
-          platformName: currentPlatformName,
-        }),
+        html: emailTemplates.welcomeEmailTemplate(templatePayload),
       };
-    case "PASSWORD_RESET":
-      return {
-        subject: `Reset Your ${currentPlatformName} Password`,
-        template: emailTemplates.PasswordResetEmail({
-          userName: payload.userName || "User",
-          resetLink: payload.resetLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/reset-password?token=xyz`,
-          platformName: currentPlatformName,
-        }),
-      };
+    // Add cases for other email types, e.g., PASSWORD_RESET
+    // case "PASSWORD_RESET":
+    //   return {
+    //     subject: `Reset Your ${currentPlatformName} Password`,
+    //     html: emailTemplates.passwordResetEmailTemplate({ // Assuming you create this
+    //       userName: payload.userName || "User",
+    //       resetLink: payload.resetLink || `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/reset-password?token=xyz`,
+    //       bankName: currentPlatformName,
+    //       emailLogoImageUrl: currentEmailLogoUrl,
+    //     }),
+    //   };
     default:
-      console.warn(`No template defined for email type: ${emailType}`);
-      return { subject: `Notification from ${currentPlatformName}`, template: null };
+      console.warn(`No HTML template defined for email type: ${emailType}`);
+      return { subject: `Notification from ${currentPlatformName}`, html: `<p>This is a notification from ${currentPlatformName}.</p>` }; // Basic fallback HTML
   }
 }

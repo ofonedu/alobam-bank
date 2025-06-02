@@ -3,9 +3,9 @@
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Timestamp } from "firebase/firestore";
 import type { z } from "zod";
-import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas"; 
+import type { LocalTransferData, InternationalTransferData, KYCFormData } from "@/lib/schemas";
 import type React from 'react';
-import type { ReactNode } from 'react'; 
+import type { ReactNode } from 'react';
 
 export interface UserProfile {
   uid: string;
@@ -16,8 +16,8 @@ export interface UserProfile {
   photoURL?: string | null;
   phoneNumber?: string;
   accountType?: string;
-  balance: number; 
-  primaryCurrency?: string; 
+  balance: number;
+  primaryCurrency?: string;
   kycStatus?: "not_started" | "pending_review" | "verified" | "rejected";
   role?: "user" | "admin";
   accountNumber?: string;
@@ -79,21 +79,21 @@ export interface KYCData {
   photoUrl?: string;
   photoFileName?: string;
   status: "not_started" | "pending_review" | "verified" | "rejected";
-  submittedAt?: Date | Timestamp; 
-  reviewedAt?: Date | Timestamp;  
+  submittedAt?: Date | Timestamp;
+  reviewedAt?: Date | Timestamp;
   reviewedBy?: string;
   rejectionReason?: string;
 }
 
 export interface ClientKYCData extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
-  submittedAt?: string; 
-  reviewedAt?: string;  
+  submittedAt?: string;
+  reviewedAt?: string;
 }
 
 export interface KYCSubmissionResult {
   success: boolean;
   message: string;
-  kycData?: ClientKYCData; 
+  kycData?: ClientKYCData;
   error?: string | Record<string, string[]>;
 }
 
@@ -145,8 +145,8 @@ export interface AccountType {
 export interface AdminKYCView extends Omit<KYCData, 'submittedAt' | 'reviewedAt'> {
   id: string;
   userEmail?: string;
-  submittedAt: Date; 
-  reviewedAt?: Date;  
+  submittedAt: Date;
+  reviewedAt?: Date;
 }
 
 
@@ -164,6 +164,7 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
+  emailLogoImageUrl?: string; // Added for email logo
   resendApiKey?: string;
   resendFromEmail?: string;
 }
@@ -410,42 +411,39 @@ export interface AuthorizationCode {
   id: string;
   value: string;
   type: 'COT' | 'IMF' | 'TAX';
-  userId?: string | null; 
+  userId?: string | null;
   createdAt: Timestamp;
   expiresAt?: Timestamp;
   isUsed: boolean;
-  generatedBy: string; 
+  generatedBy: string;
 }
 
-export enum EmailType {
-  WELCOME = "WELCOME",
-  PASSWORD_RESET = "PASSWORD_RESET",
-  KYC_SUBMITTED = "KYC_SUBMITTED",
-  KYC_APPROVED = "KYC_APPROVED",
-  KYC_REJECTED = "KYC_REJECTED",
-  TRANSFER_CONFIRMATION = "TRANSFER_CONFIRMATION",
-  TRANSFER_FAILED = "TRANSFER_FAILED",
-  DEPOSIT_CONFIRMATION = "DEPOSIT_CONFIRMATION",
-  LOAN_APPLICATION_RECEIVED = "LOAN_APPLICATION_RECEIVED",
-  LOAN_STATUS_UPDATE = "LOAN_STATUS_UPDATE", // Generic for approved/rejected
-  ADMIN_NOTIFICATION = "ADMIN_NOTIFICATION",
-}
+// Removed EmailType enum as we are switching to string literals for runtime safety
+// export enum EmailType {
+//   WELCOME = "WELCOME",
+//   PASSWORD_RESET = "PASSWORD_RESET",
+//   // ... other types
+// }
 
 export interface EmailServiceDataPayload {
   userName?: string;
-  loginLink?: string; // For WelcomeEmail
-  resetLink?: string; // For PasswordResetEmail
-  kycSubmissionDate?: string; // For KYC_SUBMITTED
-  kycRejectionReason?: string; // For KYC_REJECTED
-  transferAmount?: string; // For TRANSFER_CONFIRMATION, DEPOSIT_CONFIRMATION
-  transferRecipient?: string; // For TRANSFER_CONFIRMATION
-  transactionId?: string; // For TRANSFER_CONFIRMATION, DEPOSIT_CONFIRMATION
-  failureReason?: string; // For TRANSFER_FAILED
-  loanApplicationId?: string; // For LOAN_APPLICATION_RECEIVED, LOAN_STATUS_UPDATE
-  loanStatus?: string; // For LOAN_STATUS_UPDATE (e.g., "Approved", "Rejected")
-  adminNotificationMessage?: string; // For ADMIN_NOTIFICATION
-  adminNotificationSubject?: string; // For ADMIN_NOTIFICATION
-  // Add more fields as needed for different email types
+  loginLink?: string;
+  resetLink?: string;
+  kycSubmissionDate?: string;
+  kycRejectionReason?: string;
+  transferAmount?: string;
+  transferRecipient?: string;
+  transactionId?: string;
+  failureReason?: string;
+  loanApplicationId?: string;
+  loanStatus?: string;
+  adminNotificationMessage?: string;
+  adminNotificationSubject?: string;
+  // For the new HTML template
+  fullName?: string;
+  bankName?: string;
+  emailLogoImageUrl?: string; // Changed from iconChar
+  accountNumber?: string;
 }
 
 export interface EmailServiceResult {
@@ -454,53 +452,9 @@ export interface EmailServiceResult {
   error?: string;
 }
 
-// Notification Data - Placeholder for Cloud Function trigger
-// This structure would be written to Firestore to trigger the email sending Cloud Function
-export interface NotificationData {
-  id?: string; // Firestore document ID
-  type: EmailType;
-  toEmail: string;
-  fullName?: string;
-  firstName?: string;
-  accountNumber?: string | null;
-  status: "pending" | "sent" | "failed";
-  createdAt: Timestamp;
-  processedAt?: Timestamp;
-  errorMessage?: string;
-  bankName?: string; // For template consistency
-  logoUrl?: string; // For template consistency
-  // Dynamic data based on EmailType
-  userName?: string;
-  loginLink?: string;
-  resetLink?: string;
-  kycSubmissionDate?: string;
-  kycRejectionReason?: string;
-  amount?: number;
-  currency?: string;
-  description?: string;
-  location?: string;
-  valueDate?: string;
-  remarks?: string;
-  time?: string;
-  currentBalance?: number;
-  availableBalance?: number;
-  docNumber?: string;
-  transactionId?: string;
-  recipientName?: string;
-  reason?: string;
-  loanId?: string;
-  loanAmount?: number;
-  approvalDate?: string;
-  rejectionDate?: string;
-  adminNotificationMessage?: string;
-  adminNotificationSubject?: string;
-}
-
 export interface DeleteUserDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   user: AdminUserView | null;
   onConfirmDelete: () => void;
 }
-
-    
