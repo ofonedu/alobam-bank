@@ -16,7 +16,7 @@ import {
   deleteUser
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import type { AuthUser, UserProfile, EmailType } from "@/types"; // Corrected import
+import { EmailType, type AuthUser, type UserProfile } from "@/types"; // Corrected EmailType import
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { z } from "zod";
 import type { AuthSchema, RegisterFormData, ChangePasswordFormData } from "@/lib/schemas";
