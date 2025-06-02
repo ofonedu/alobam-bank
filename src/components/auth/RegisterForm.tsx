@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RegisterSchema, type RegisterFormData } from "@/lib/schemas";
 import { useState, useEffect } from "react";
-import { Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
+import { Loader2, AlertTriangle, Eye, EyeOff } from "lucide-react"; 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAccountTypesAction } from "@/lib/actions/admin-settings-actions";
 import type { AccountType } from "@/types";
@@ -30,6 +30,7 @@ interface RegisterFormProps {
 export function RegisterForm({ onSubmit }: RegisterFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [accountTypesList, setAccountTypesList] = useState<AccountType[]>([]);
   const [isLoadingAccountTypes, setIsLoadingAccountTypes] = useState(true);
   const [accountTypesError, setAccountTypesError] = useState<string | null>(null);
@@ -42,8 +43,8 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
       email: "",
       password: "",
       phoneNumber: "",
-      accountType: "", // Will store the ID of the selected account type
-      currency: "USD", // Default currency
+      accountType: "", 
+      currency: "USD", 
     },
   });
 
@@ -79,7 +80,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
     }
   };
 
-  const noAccountTypesAvailable = !isLoadingAccountTypes && accountTypesList.length === 0 && !accountTypesError;
+  const togglePasswordVisibility = () => setShowPassword(!showPassword);
 
   return (
     <Form {...form}>
@@ -138,9 +139,33 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Password</FormLabel>
-              <FormControl>
-                <Input placeholder="••••••••" {...field} type="password" />
-              </FormControl>
+              <div className="relative">
+                <FormControl>
+                  <Input
+                    placeholder="••••••••"
+                    {...field}
+                    type={showPassword ? "text" : "password"}
+                    className="pr-10"
+                  />
+                </FormControl>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={togglePasswordVisibility}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">
+                    {showPassword ? "Hide password" : "Show password"}
+                  </span>
+                </Button>
+              </div>
               <FormMessage />
             </FormItem>
           )}
