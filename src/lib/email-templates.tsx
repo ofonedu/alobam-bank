@@ -1,5 +1,6 @@
 // src/lib/email-templates.tsx
 import * as React from 'react';
+import { formatCurrency } from './utils'; // Assuming you have this utility
 
 interface EmailTemplateProps {
   fullName?: string;
@@ -7,11 +8,20 @@ interface EmailTemplateProps {
   emailLogoImageUrl?: string;
   loginUrl?: string;
   accountNumber?: string;
+  // KYC Specific
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
   // For Admin KYC Notification
   adminReviewUrl?: string;
   userId?: string;
+  // Transaction Specific
+  transactionAmount?: string; // Formatted amount with currency
+  transactionType?: string;
+  transactionDate?: string;
+  transactionId?: string;
+  transactionDescription?: string;
+  recipientName?: string;
+  currentBalance?: string; // Formatted new balance with currency
 }
 
 // Common styles
@@ -29,9 +39,12 @@ const capitalizeStyle = "text-transform: capitalize;";
 
 
 function getLogoDisplay(bankName: string = "Wohana Funds", emailLogoImageUrl?: string): string {
-  return emailLogoImageUrl
-    ? `<img src="${emailLogoImageUrl}" alt="${bankName} Logo" style="max-height:50px; margin-bottom:10px; border:0;" />`
-    : `<span style="font-size:24px; font-weight:bold; color:#002147; line-height:1.2;">${bankName}</span>`;
+  if (emailLogoImageUrl) {
+    return `<img src="${emailLogoImageUrl}" alt="${bankName} Logo" style="max-height:50px; margin-bottom:10px; border:0;" />`;
+  }
+  // Fallback to text if no image URL
+  const firstChar = bankName ? bankName.charAt(0).toUpperCase() : "WF";
+  return `<div style="width:50px; height:50px; line-height:50px; text-align:center; background-color:#002147; color:#FFD700; font-size:24px; font-weight:bold; border-radius:50%; margin:0 auto 10px auto;">${firstChar}</div><span style="font-size:24px;font-weight:bold;color:#002147;line-height:1.2;">${bankName}</span>`;
 }
 
 function getFooter(bankName: string = "Wohana Funds"): string {
@@ -244,6 +257,115 @@ export function adminKycSubmittedEmailTemplate({
       </div>
       <p style="${pStyle}">Please log in to the admin panel to review the details and take appropriate action.</p>
       <p style="${pStyle}">Thank you,<br>The ${bankName} System</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
+
+export function debitNotificationEmailTemplate({
+  fullName = "Valued Customer",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  transactionAmount,
+  transactionType,
+  transactionDate,
+  transactionId,
+  transactionDescription,
+  recipientName,
+  currentBalance,
+  loginUrl = "#",
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName);
+  const dateDisplay = transactionDate ? new Date(transactionDate).toLocaleString() : "Recently";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debit Notification - ${bankName}</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#002147;">Debit Transaction Alert</p>
+      <p style="${pStyle}">Dear <span style="${capitalizeStyle}">${fullName}</span>,</p>
+      <p style="${pStyle}">This email confirms that a debit transaction has occurred on your account:</p>
+      <ul style="list-style-type: none; padding-left: 0;">
+        <li style="${pStyle}"><strong style="${strongStyle}">Amount:</strong> <span style="color: #D32F2F; font-weight:bold;">${transactionAmount || 'N/A'}</span></li>
+        <li style="${pStyle}"><strong style="${strongStyle}">Type:</strong> ${transactionType || 'N/A'}</li>
+        <li style="${pStyle}"><strong style="${strongStyle}">Date:</strong> ${dateDisplay}</li>
+        ${transactionDescription ? `<li style="${pStyle}"><strong style="${strongStyle}">Description:</strong> ${transactionDescription}</li>` : ''}
+        ${recipientName ? `<li style="${pStyle}"><strong style="${strongStyle}">Recipient:</strong> ${recipientName}</li>` : ''}
+        <li style="${pStyle}"><strong style="${strongStyle}">Transaction ID:</strong> ${transactionId || 'N/A'}</li>
+      </ul>
+      <p style="${pStyle}">Your new account balance is <strong style="${strongStyle}">${currentBalance || 'N/A'}</strong>.</p>
+      <p style="${pStyle}">If you did not authorize this transaction, please contact our support team immediately.</p>
+      <div style="${buttonContainerStyle}">
+        <a href="${loginUrl}" style="${buttonStyle}">View Account Activity</a>
+      </div>
+      <p style="${pStyle}">Best regards,<br>The ${bankName} Team</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
+
+export function creditNotificationEmailTemplate({
+  fullName = "Valued Customer",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  transactionAmount,
+  transactionType,
+  transactionDate,
+  transactionId,
+  transactionDescription,
+  currentBalance,
+  loginUrl = "#",
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName);
+  const dateDisplay = transactionDate ? new Date(transactionDate).toLocaleString() : "Recently";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credit Notification - ${bankName}</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#002147;">Credit Transaction Alert</p>
+      <p style="${pStyle}">Dear <span style="${capitalizeStyle}">${fullName}</span>,</p>
+      <p style="${pStyle}">This email confirms that a credit transaction has occurred on your account:</p>
+      <ul style="list-style-type: none; padding-left: 0;">
+        <li style="${pStyle}"><strong style="${strongStyle}">Amount:</strong> <span style="color: #388E3C; font-weight:bold;">${transactionAmount || 'N/A'}</span></li>
+        <li style="${pStyle}"><strong style="${strongStyle}">Type:</strong> ${transactionType || 'N/A'}</li>
+        <li style="${pStyle}"><strong style="${strongStyle}">Date:</strong> ${dateDisplay}</li>
+        ${transactionDescription ? `<li style="${pStyle}"><strong style="${strongStyle}">Description:</strong> ${transactionDescription}</li>` : ''}
+        <li style="${pStyle}"><strong style="${strongStyle}">Transaction ID:</strong> ${transactionId || 'N/A'}</li>
+      </ul>
+      <p style="${pStyle}">Your new account balance is <strong style="${strongStyle}">${currentBalance || 'N/A'}</strong>.</p>
+      <div style="${buttonContainerStyle}">
+        <a href="${loginUrl}" style="${buttonStyle}">View Account Activity</a>
+      </div>
+      <p style="${pStyle}">Best regards,<br>The ${bankName} Team</p>
     </div>
     ${footerHtml}
   </div>

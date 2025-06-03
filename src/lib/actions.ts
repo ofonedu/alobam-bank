@@ -11,6 +11,7 @@ import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-
 import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { sendTransactionalEmail, getEmailTemplateAndSubject } from "./email-service";
+import { formatCurrency } from "./utils";
 
 export async function submitKycAction(
   userId: string,
@@ -265,7 +266,7 @@ export async function recordTransferAction(
 
     const cotAmount = transferData.amount * cotPercentageToUse;
     const totalDeduction = transferData.amount + cotAmount;
-    const transactionCurrency = 'currency' in transferData ? transferData.currency : "USD"; // Default currency for transfers
+    const transactionCurrency = 'currency' in transferData && transferData.currency ? transferData.currency : userProfile.primaryCurrency || "USD";
 
 
     let cotCodeId: string | undefined;
@@ -301,14 +302,12 @@ export async function recordTransferAction(
         throw new Error("User profile not found within transaction.");
       }
       const userProfileData = freshUserDoc.data() as UserProfile;
-      const currentBalance = userProfileData.balance || 0; // Use single balance field
+      const currentBalance = userProfileData.balance || 0; 
 
-      // Assuming transfers deduct from the primary balance.
-      // If multi-currency for transfers were intended, this logic would need userProfileData.primaryCurrency
-      // to match transactionCurrency or a more complex balance map update.
-      // For now, we assume the main 'balance' field is in the user's primaryCurrency.
-      if (userProfileData.primaryCurrency !== transactionCurrency) {
-        console.warn(`Transfer currency (${transactionCurrency}) differs from user's primary currency (${userProfileData.primaryCurrency}). Balance update will affect the main balance field. This might require currency conversion logic not yet implemented.`);
+      if (userProfileData.primaryCurrency !== transactionCurrency && !('currency' in transferData) ) {
+        // This case is unlikely if `transactionCurrency` defaults to `userProfile.primaryCurrency`
+        // but good for safety.
+        console.warn(`Transfer currency for local transfer should match user's primary currency. Defaulting to user's primary: ${userProfileData.primaryCurrency}.`);
       }
 
       if (currentBalance < totalDeduction) {
@@ -356,7 +355,6 @@ export async function recordTransferAction(
       const transactionDocRef = doc(collection(db, "transactions"));
       transaction.set(transactionDocRef, newTransactionData);
       
-      // Handling COT as a separate transaction/fee if applicable
       if (cotAmount > 0) {
         const cotTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
             userId,
@@ -376,8 +374,16 @@ export async function recordTransferAction(
       if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodesInsideTx);
       if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodesInsideTx);
       if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodesInsideTx);
+      // The batch inside runTransaction will be committed as part of the transaction
 
-      return { balance: updatedBalance, transactionId: transactionDocRef.id, currency: userProfileData.primaryCurrency || "USD" };
+      return { 
+        transactionId: transactionDocRef.id, 
+        newBalance: updatedBalance, 
+        userCurrency: userProfileData.primaryCurrency || "USD",
+        userFullName: userProfileData.displayName || "Customer",
+        mainTransferAmount: transferData.amount,
+        recipientName: transferData.recipientName
+      };
     });
 
     const firestoreBatchForCodes = writeBatch(db);
@@ -385,6 +391,36 @@ export async function recordTransferAction(
     if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodes);
     if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
     await firestoreBatchForCodes.commit().catch(err => console.error("Error committing code usage batch:", err));
+    
+    // Send Debit Notification Email to Sender
+    if (userProfile.email) {
+      const emailPayload = {
+        fullName: transactionResult.userFullName,
+        transactionAmount: formatCurrency(transactionResult.mainTransferAmount, transactionResult.userCurrency),
+        transactionType: "Debit - Fund Transfer",
+        transactionDate: new Date().toISOString(),
+        transactionId: transactionResult.transactionId,
+        transactionDescription: `Transfer to ${transactionResult.recipientName}`,
+        recipientName: transactionResult.recipientName,
+        currentBalance: formatCurrency(transactionResult.newBalance, transactionResult.userCurrency),
+        loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/transactions`,
+      };
+      try {
+        const emailContent = await getEmailTemplateAndSubject("DEBIT_NOTIFICATION", emailPayload);
+        if (emailContent.html) {
+          sendTransactionalEmail({
+            to: userProfile.email,
+            subject: emailContent.subject,
+            htmlBody: emailContent.html,
+          }).then(emailRes => {
+            if (!emailRes.success) console.error("Failed to send debit notification email:", emailRes.error);
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing debit notification email:", emailError.message);
+      }
+    }
+
 
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/transactions");
@@ -393,7 +429,7 @@ export async function recordTransferAction(
     return {
       success: true,
       message: "Transfer processed successfully.",
-      newBalance: transactionResult.balance,
+      newBalance: transactionResult.newBalance,
       transactionId: transactionResult.transactionId,
     };
 

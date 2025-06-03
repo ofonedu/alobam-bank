@@ -418,17 +418,20 @@ export interface AuthorizationCode {
 }
 
 export interface EmailServiceDataPayload {
-  userName?: string; 
+  userName?: string;
   loginLink?: string;
-  resetLink?: string; 
+  resetLink?: string;
   // KYC Specific
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
-  // Transfer Specific
-  transferAmount?: string;
-  transferRecipient?: string;
-  // Generic Notification
+  // Transfer & Transaction Specific
+  transactionAmount?: string; // Formatted amount with currency
+  transactionType?: string; // e.g., "Fund Transfer", "Admin Credit"
+  transactionDate?: string;
   transactionId?: string;
+  recipientName?: string; // Optional, for transfers
+  currentBalance?: string; // Formatted new balance with currency
+  // Generic Notification
   failureReason?: string;
   loanApplicationId?: string;
   loanStatus?: string;

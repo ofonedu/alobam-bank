@@ -1,4 +1,3 @@
-
 // src/lib/actions/admin-actions.ts
 "use server";
 
@@ -17,12 +16,12 @@ import {
   where,
   getCountFromServer,
   setDoc,
-  deleteDoc, // Added deleteDoc
+  deleteDoc, 
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { AdminAddUserSchema } from "../schemas";
-import { createUserWithEmailAndPassword, deleteUser as deleteAuthUser } from "firebase/auth"; // Renamed deleteUser to deleteAuthUser
-import { getRandomName } from "../utils";
+import { createUserWithEmailAndPassword, deleteUser as deleteAuthUser } from "firebase/auth"; 
+import { getRandomName, formatCurrency } from "../utils";
 import { sendTransactionalEmail, getEmailTemplateAndSubject } from "../email-service";
 import { getPlatformSettingsAction } from "./admin-settings-actions";
 
@@ -139,7 +138,7 @@ export async function issueManualAdjustmentAction(
   amount: number,
   type: "credit" | "debit",
   description: string,
-  currency?: string, // Currency for the transaction record, not for balance selection
+  currency?: string, 
   adminUserId?: string 
 ): Promise<ManualAdjustmentResult> {
   if (!targetUserId || !amount || !description ) {
@@ -186,11 +185,43 @@ export async function issueManualAdjustmentAction(
         transactionId: transactionDocRef.id, 
         newBalance: newBalance,
         userCurrency: currency || userPrimaryCurrency, 
-        userName: userProfileData.displayName || targetUserId
+        userFullName: userProfileData.displayName || `${userProfileData.firstName} ${userProfileData.lastName}`.trim() || targetUserId,
+        userEmail: userProfileData.email,
+        transactionDate: newTransactionData.date.toDate().toISOString(),
       }; 
     });
     
-    const successMessage = `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${transactionResult.userName} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`;
+    const successMessage = `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${transactionResult.userFullName} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`;
+
+    // Send email notification for manual adjustment
+    if (transactionResult.userEmail) {
+        const emailPayload = {
+            fullName: transactionResult.userFullName,
+            transactionAmount: formatCurrency(Math.abs(adjustmentAmount), transactionResult.userCurrency),
+            transactionType: type === "credit" ? "Credit - Admin Adjustment" : "Debit - Admin Adjustment",
+            transactionDate: transactionResult.transactionDate,
+            transactionId: transactionResult.transactionId,
+            transactionDescription: description,
+            currentBalance: formatCurrency(transactionResult.newBalance, transactionResult.userCurrency),
+            loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/transactions`,
+        };
+        const emailNotificationType = type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
+        try {
+            const emailContent = await getEmailTemplateAndSubject(emailNotificationType, emailPayload);
+            if (emailContent.html) {
+                sendTransactionalEmail({
+                    to: transactionResult.userEmail,
+                    subject: emailContent.subject,
+                    htmlBody: emailContent.html,
+                }).then(emailRes => {
+                    if (!emailRes.success) console.error(`Failed to send ${type} notification email for manual adjustment:`, emailRes.error);
+                });
+            }
+        } catch (emailError: any) {
+            console.error(`Error preparing ${type} notification email for manual adjustment:`, emailError.message);
+        }
+    }
+
 
     revalidatePath("/admin/financial-ops");
     revalidatePath("/admin/transactions"); 
@@ -260,7 +291,6 @@ export async function generateRandomTransactionsAction(
 
     for (let i = 0; i < count; i++) {
       const randomDate = new Date();
-      // Make transactions very recent, e.g., within the last 24 hours
       const hoursAgo = Math.floor(Math.random() * 24);
       randomDate.setHours(randomDate.getHours() - hoursAgo);
       randomDate.setMinutes(Math.floor(Math.random() * 60));
@@ -683,13 +713,6 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
       batch.delete(kycDataRef);
     }
 
-    // TODO: Consider deleting user's transactions, loans, etc.
-    // For now, these will be orphaned but this action focuses on unblocking email registration.
-    // Example:
-    // const transactionsQuery = query(collection(db, "transactions"), where("userId", "==", userId));
-    // const transactionsSnapshot = await getDocs(transactionsQuery);
-    // transactionsSnapshot.forEach(doc => batch.delete(doc.ref));
-
     await batch.commit();
 
     revalidatePath("/admin/users");
@@ -707,3 +730,4 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
     };
   }
 }
+
