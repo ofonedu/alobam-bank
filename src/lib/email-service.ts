@@ -27,11 +27,11 @@ async function initializeResendClient(): Promise<boolean> {
       const apiKey = settingsResult.settings.resendApiKey;
       const fromEmail = settingsResult.settings.resendFromEmail;
       const pName = settingsResult.settings.platformName;
-      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl; 
+      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl;
 
       if (!apiKey) {
         console.error("Resend client initialization FAILED: Resend API Key is MISSING from settings.");
-        resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = pName || "Wohana Funds"; // Set platformName even if other settings fail
+        resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = pName || "Wohana Funds";
         return false;
       }
       if (!fromEmail) {
@@ -41,23 +41,25 @@ async function initializeResendClient(): Promise<boolean> {
       }
       if (!pName) {
         console.warn("Resend client initialization WARNING: Platform Name is MISSING from settings. Using default 'Wohana Funds' for email display name.");
+        platformNameForEmail = "Wohana Funds";
+      } else {
+        platformNameForEmail = pName;
       }
 
-      platformNameForEmail = pName || "Wohana Funds"; // Assign to the module-level variable
       resend = new Resend(apiKey);
-      fromEmailAddress = fromEmail; // Assign to the module-level variable
+      fromEmailAddress = fromEmail;
       resendInitialized = true;
       console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}, Email Logo: ${emailLogoImageUrlForEmail || 'Not set'}`);
       return true;
 
     } else {
       console.error("Resend client initialization FAILED: Could not retrieve platform settings.", settingsResult.error);
-      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; // Fallback platformName
+      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined;
       return false;
     }
   } catch (error) {
     console.error("Resend client initialization EXCEPTION:", error);
-    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; // Fallback platformName
+    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined;
     return false;
   }
 }
@@ -173,7 +175,18 @@ export async function getEmailTemplateAndSubject(
         emailSubject = `Welcome to ${currentPlatformName}!`;
         htmlContent = emailTemplates.welcomeEmailTemplate(templatePayload);
         break;
-      // PASSWORD_RESET case is removed as Firebase handles it
+      case "KYC_SUBMITTED":
+        emailSubject = `KYC Submission Received - ${currentPlatformName}`;
+        htmlContent = emailTemplates.kycSubmittedEmailTemplate(templatePayload);
+        break;
+      case "KYC_APPROVED":
+        emailSubject = `KYC Approved! - ${currentPlatformName}`;
+        htmlContent = emailTemplates.kycApprovedEmailTemplate(templatePayload);
+        break;
+      case "KYC_REJECTED":
+        emailSubject = `KYC Submission Update - ${currentPlatformName}`;
+        htmlContent = emailTemplates.kycRejectedEmailTemplate(templatePayload);
+        break;
       default:
         console.warn(`getEmailTemplateAndSubject: No specific HTML template defined for email type: ${emailType}. Using basic fallback.`);
         htmlContent = `<p>This is a generic notification from ${currentPlatformName}.</p><p>Details: ${JSON.stringify(payload)}</p>`;
@@ -184,7 +197,8 @@ export async function getEmailTemplateAndSubject(
     emailSubject = `Important Notification from ${currentPlatformName}`;
   }
   
-  console.log(`getEmailTemplateAndSubject: Generated HTML Content for type "${emailType}" (first 200 chars):`, htmlContent ? htmlContent.substring(0, 200) + "..." : "HTML content is null/empty");
+  const generatedHtmlSnippet = htmlContent ? htmlContent.substring(0, 200) + "..." : "HTML content is null/empty";
+  console.log(`getEmailTemplateAndSubject: Generated HTML Content for type "${emailType}" (first 200 chars):`, generatedHtmlSnippet);
 
   return {
     subject: emailSubject,

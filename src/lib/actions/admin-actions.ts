@@ -23,6 +23,8 @@ import { revalidatePath } from "next/cache";
 import { AdminAddUserSchema } from "../schemas";
 import { createUserWithEmailAndPassword, deleteUser as deleteAuthUser } from "firebase/auth"; // Renamed deleteUser to deleteAuthUser
 import { getRandomName } from "../utils";
+import { sendTransactionalEmail, getEmailTemplateAndSubject } from "../email-service";
+import { getPlatformSettingsAction } from "./admin-settings-actions";
 
 
 // --- Dashboard Stats ---
@@ -394,6 +396,11 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
   try {
     const kycDocRef = doc(db, "kycData", kycId); 
     const userDocRef = doc(db, "users", userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      return { success: false, message: `User profile for ${userId} not found.` };
+    }
+    const userProfile = userDocSnap.data() as UserProfile;
 
     const kycUpdate: Partial<KYCData> = {
       status: "verified",
@@ -407,6 +414,33 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
     firestoreBatch.update(kycDocRef, kycUpdate);
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
+
+    // Send KYC Approved Email
+    const settingsResult = await getPlatformSettingsAction();
+    const emailPayload = {
+      fullName: userProfile.displayName || userProfile.firstName || "Customer",
+      bankName: settingsResult.settings?.platformName || "Wohana Funds",
+      emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
+      loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
+    };
+
+    if (userProfile.email) {
+      try {
+        const emailContent = await getEmailTemplateAndSubject("KYC_APPROVED", emailPayload);
+        if (emailContent.html) {
+          sendTransactionalEmail({
+            to: userProfile.email,
+            subject: emailContent.subject,
+            htmlBody: emailContent.html,
+            textBody: `Congratulations ${emailPayload.fullName}, your KYC has been approved. You now have full access. - The ${emailPayload.bankName} Team.`
+          }).then(emailResult => {
+            if (!emailResult.success) console.error("Failed to send KYC approved email:", emailResult.error);
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing/sending KYC approved email:", emailError.message);
+      }
+    }
     
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -427,6 +461,11 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
   try {
     const kycDocRef = doc(db, "kycData", kycId);
     const userDocRef = doc(db, "users", userId);
+    const userDocSnap = await getDoc(userDocRef);
+     if (!userDocSnap.exists()) {
+      return { success: false, message: `User profile for ${userId} not found.` };
+    }
+    const userProfile = userDocSnap.data() as UserProfile;
 
     const kycUpdate: Partial<KYCData> = {
       status: "rejected",
@@ -440,6 +479,34 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     firestoreBatch.update(kycDocRef, kycUpdate);
     firestoreBatch.update(userDocRef, userProfileUpdate);
     await firestoreBatch.commit();
+
+    // Send KYC Rejected Email
+    const settingsResult = await getPlatformSettingsAction();
+    const emailPayload = {
+      fullName: userProfile.displayName || userProfile.firstName || "Customer",
+      bankName: settingsResult.settings?.platformName || "Wohana Funds",
+      emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
+      kycRejectionReason: rejectionReason,
+      loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/kyc`,
+    };
+
+    if (userProfile.email) {
+       try {
+        const emailContent = await getEmailTemplateAndSubject("KYC_REJECTED", emailPayload);
+        if (emailContent.html) {
+          sendTransactionalEmail({
+            to: userProfile.email,
+            subject: emailContent.subject,
+            htmlBody: emailContent.html,
+            textBody: `Dear ${emailPayload.fullName}, your KYC submission was rejected. Reason: ${rejectionReason}. Please resubmit. - The ${emailPayload.bankName} Team.`
+          }).then(emailResult => {
+            if (!emailResult.success) console.error("Failed to send KYC rejected email:", emailResult.error);
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing/sending KYC rejected email:", emailError.message);
+      }
+    }
 
     revalidatePath("/admin/kyc");
     revalidatePath(`/dashboard/kyc`);
@@ -640,5 +707,3 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
     };
   }
 }
-
-    

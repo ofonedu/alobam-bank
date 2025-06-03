@@ -164,7 +164,7 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
-  emailLogoImageUrl?: string; 
+  emailLogoImageUrl?: string;
   resendApiKey?: string;
   resendFromEmail?: string;
 }
@@ -419,20 +419,23 @@ export interface AuthorizationCode {
 }
 
 export interface EmailServiceDataPayload {
-  userName?: string;
+  userName?: string; // Generic, can be same as fullName
   loginLink?: string;
-  resetLink?: string;
+  resetLink?: string; // Though Firebase handles this, might be useful for custom flows later
+  // KYC Specific
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
+  // Transfer Specific
   transferAmount?: string;
   transferRecipient?: string;
+  // Generic Notification
   transactionId?: string;
   failureReason?: string;
   loanApplicationId?: string;
   loanStatus?: string;
   adminNotificationMessage?: string;
   adminNotificationSubject?: string;
-  // For the new HTML template
+  // For Welcome Email & general branding
   fullName?: string;
   bankName?: string;
   emailLogoImageUrl?: string;

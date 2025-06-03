@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions";
 import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
 import { sendPasswordResetEmail } from "firebase/auth";
+import { sendTransactionalEmail, getEmailTemplateAndSubject } from "./email-service";
 
 export async function submitKycAction(
   userId: string,
@@ -76,6 +77,12 @@ export async function submitKycAction(
 
     const kycDocRef = doc(db, "kycData", userId);
     const userDocRef = doc(db, "users", userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      return { success: false, message: "User profile not found." };
+    }
+    const userProfile = userDocSnap.data() as UserProfile;
+
 
     const newKycDataForFirestore: KYCData = { 
       userId,
@@ -95,6 +102,35 @@ export async function submitKycAction(
       kycStatus: newKycDataForFirestore.status,
     };
     await updateDoc(userDocRef, userProfileUpdate);
+
+    // Send KYC Submitted Email
+    const settingsResult = await getPlatformSettingsAction();
+    const emailPayload = {
+      fullName: fullName,
+      bankName: settingsResult.settings?.platformName || "Wohana Funds",
+      emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
+      kycSubmissionDate: (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString(),
+      loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/kyc`,
+    };
+
+    if (userProfile.email) {
+      try {
+        const emailContent = await getEmailTemplateAndSubject("KYC_SUBMITTED", emailPayload);
+        if (emailContent.html) {
+          sendTransactionalEmail({
+            to: userProfile.email,
+            subject: emailContent.subject,
+            htmlBody: emailContent.html,
+            textBody: `Your KYC documents submitted on ${emailPayload.kycSubmissionDate} have been received and are under review. Thank you, The ${emailPayload.bankName} Team.`
+          }).then(emailResult => {
+            if (!emailResult.success) console.error("Failed to send KYC submitted email:", emailResult.error);
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing/sending KYC submitted email:", emailError.message);
+      }
+    }
+
 
     revalidatePath("/dashboard/kyc");
     revalidatePath("/dashboard");
