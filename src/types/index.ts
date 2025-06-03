@@ -1,4 +1,3 @@
-
 // src/types/index.ts
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Timestamp } from "firebase/firestore";
@@ -419,9 +418,9 @@ export interface AuthorizationCode {
 }
 
 export interface EmailServiceDataPayload {
-  userName?: string; // Generic, can be same as fullName
+  userName?: string; 
   loginLink?: string;
-  resetLink?: string; // Though Firebase handles this, might be useful for custom flows later
+  resetLink?: string; 
   // KYC Specific
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
@@ -440,6 +439,9 @@ export interface EmailServiceDataPayload {
   bankName?: string;
   emailLogoImageUrl?: string;
   accountNumber?: string;
+  // For Admin KYC Notification
+  adminReviewUrl?: string;
+  userId?: string; // User ID of the person who submitted KYC
 }
 
 export interface EmailServiceResult {

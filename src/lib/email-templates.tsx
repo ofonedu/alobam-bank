@@ -1,4 +1,3 @@
-
 // src/lib/email-templates.tsx
 import * as React from 'react';
 
@@ -10,6 +9,9 @@ interface EmailTemplateProps {
   accountNumber?: string;
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
+  // For Admin KYC Notification
+  adminReviewUrl?: string;
+  userId?: string;
 }
 
 // Common styles
@@ -197,6 +199,51 @@ export function kycRejectedEmailTemplate({
       </div>
       <p style="${pStyle}">If you have any questions or believe this is an error, please contact our support team.</p>
       <p style="${pStyle}">Best regards,<br>The ${bankName} Team</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
+
+
+export function adminKycSubmittedEmailTemplate({
+  fullName = "N/A",
+  userId = "N/A",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  kycSubmissionDate,
+  adminReviewUrl = "#",
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName);
+  const submissionDateDisplay = kycSubmissionDate ? new Date(kycSubmissionDate).toLocaleDateString() : "recently";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New KYC Submission - ${bankName} Admin</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#002147;">Admin Notification: New KYC Submission</p>
+      <p style="${pStyle}">A new KYC submission has been received and requires your review.</p>
+      <p style="${pStyle}"><strong style="${strongStyle}">User Name:</strong> <span style="${capitalizeStyle}">${fullName}</span></p>
+      <p style="${pStyle}"><strong style="${strongStyle}">User ID:</strong> ${userId}</p>
+      <p style="${pStyle}"><strong style="${strongStyle}">Submission Date:</strong> ${submissionDateDisplay}</p>
+      <div style="${buttonContainerStyle}">
+        <a href="${adminReviewUrl}" style="${buttonStyle}">Review Submission</a>
+      </div>
+      <p style="${pStyle}">Please log in to the admin panel to review the details and take appropriate action.</p>
+      <p style="${pStyle}">Thank you,<br>The ${bankName} System</p>
     </div>
     ${footerHtml}
   </div>

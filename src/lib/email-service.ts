@@ -1,4 +1,3 @@
-
 // src/lib/email-service.ts
 "use server";
 
@@ -186,6 +185,10 @@ export async function getEmailTemplateAndSubject(
       case "KYC_REJECTED":
         emailSubject = `KYC Submission Update - ${currentPlatformName}`;
         htmlContent = emailTemplates.kycRejectedEmailTemplate(templatePayload);
+        break;
+      case "ADMIN_KYC_SUBMITTED":
+        emailSubject = `New KYC Submission Requires Review - ${currentPlatformName}`;
+        htmlContent = emailTemplates.adminKycSubmittedEmailTemplate(templatePayload);
         break;
       default:
         console.warn(`getEmailTemplateAndSubject: No specific HTML template defined for email type: ${emailType}. Using basic fallback.`);

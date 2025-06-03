@@ -1,4 +1,3 @@
-
 // src/lib/actions.ts
 "use server";
 
@@ -103,32 +102,68 @@ export async function submitKycAction(
     };
     await updateDoc(userDocRef, userProfileUpdate);
 
-    // Send KYC Submitted Email
     const settingsResult = await getPlatformSettingsAction();
-    const emailPayload = {
-      fullName: fullName,
-      bankName: settingsResult.settings?.platformName || "Wohana Funds",
-      emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
-      kycSubmissionDate: (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString(),
+    const platformName = settingsResult.settings?.platformName || "Wohana Funds";
+    const emailLogoUrl = settingsResult.settings?.emailLogoImageUrl;
+    const adminEmail = settingsResult.settings?.supportEmail;
+    const submissionTimestamp = (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString();
+
+    // Send KYC Submitted Email to User
+    const userEmailPayload = {
+      fullName,
+      bankName: platformName,
+      emailLogoImageUrl: emailLogoUrl,
+      kycSubmissionDate: submissionTimestamp,
       loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/kyc`,
     };
 
     if (userProfile.email) {
       try {
-        const emailContent = await getEmailTemplateAndSubject("KYC_SUBMITTED", emailPayload);
+        const emailContent = await getEmailTemplateAndSubject("KYC_SUBMITTED", userEmailPayload);
         if (emailContent.html) {
           sendTransactionalEmail({
             to: userProfile.email,
             subject: emailContent.subject,
             htmlBody: emailContent.html,
-            textBody: `Your KYC documents submitted on ${emailPayload.kycSubmissionDate} have been received and are under review. Thank you, The ${emailPayload.bankName} Team.`
+            textBody: `Your KYC documents submitted on ${submissionTimestamp} have been received and are under review. Thank you, The ${platformName} Team.`
           }).then(emailResult => {
-            if (!emailResult.success) console.error("Failed to send KYC submitted email:", emailResult.error);
+            if (!emailResult.success) console.error("Failed to send KYC submitted email to user:", emailResult.error);
+            else console.log("KYC submitted email sent to user successfully.");
           });
         }
       } catch (emailError: any) {
-        console.error("Error preparing/sending KYC submitted email:", emailError.message);
+        console.error("Error preparing/sending KYC submitted email to user:", emailError.message);
       }
+    }
+
+    // Send KYC Submitted Notification to Admin
+    if (adminEmail) {
+      const adminEmailPayload = {
+        fullName, // User's full name
+        userId,
+        bankName: platformName,
+        emailLogoImageUrl: emailLogoUrl,
+        kycSubmissionDate: submissionTimestamp,
+        adminReviewUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/admin/kyc`,
+      };
+      try {
+        const adminEmailContent = await getEmailTemplateAndSubject("ADMIN_KYC_SUBMITTED", adminEmailPayload);
+        if (adminEmailContent.html) {
+          sendTransactionalEmail({
+            to: adminEmail,
+            subject: adminEmailContent.subject,
+            htmlBody: adminEmailContent.html,
+            textBody: `New KYC Submission: User ${fullName} (ID: ${userId}) submitted KYC documents on ${submissionTimestamp}. Review at ${adminEmailPayload.adminReviewUrl}. - The ${platformName} System.`
+          }).then(emailResult => {
+            if (!emailResult.success) console.error("Failed to send KYC submitted notification to admin:", emailResult.error);
+            else console.log("KYC submitted notification sent to admin successfully.");
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing/sending KYC submitted notification to admin:", emailError.message);
+      }
+    } else {
+      console.warn("Admin/Support email not configured in platform settings. Cannot send KYC submission notification to admin.");
     }
 
 
@@ -144,7 +179,7 @@ export async function submitKycAction(
       photoUrl: newKycDataForFirestore.photoUrl,
       photoFileName: newKycDataForFirestore.photoFileName,
       status: newKycDataForFirestore.status,
-      submittedAt: (newKycDataForFirestore.submittedAt as Timestamp).toDate().toISOString(),
+      submittedAt: submissionTimestamp,
     };
 
     return {
@@ -641,3 +676,4 @@ export async function requestPasswordResetAction(email: string): Promise<Request
     return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
   }
 }
+
