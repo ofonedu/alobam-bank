@@ -383,10 +383,16 @@ export interface KYCDetailModalProps {
   onActionComplete: () => void;
 }
 
-export interface ViewLoanDetailModalProps {
+export interface ViewLoanDetailModalProps { // Admin version
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   loan: AdminLoanApplicationView | null;
+}
+
+export interface UserViewLoanDetailModalProps { // User version
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  loan: Loan | null;
 }
 
 export interface ViewTransactionDetailModalProps {
@@ -467,3 +473,4 @@ export interface DeleteUserDialogProps {
   user: AdminUserView | null;
   onConfirmDelete: () => void;
 }
+

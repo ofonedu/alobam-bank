@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from '@/hooks/use-toast';
 import { submitLoanApplicationAction } from '@/lib/actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ViewUserLoanDetailModal } from "./components/ViewUserLoanDetailModal";
 
 
 const StatusBadgeLoan = ({ status }: { status: Loan["status"] }) => {
@@ -73,6 +74,8 @@ export default function LoansPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<Loan | null>(null);
 
   const form = useForm<LoanApplicationData>({
     resolver: zodResolver(LoanApplicationSchema),
@@ -97,31 +100,23 @@ export default function LoansPage() {
       const fetchedLoans = querySnapshot.docs.map(doc => {
         const data = doc.data();
         
-        let appDate: Date;
-        if (data.applicationDate && (data.applicationDate as Timestamp)?.toDate) {
-            appDate = (data.applicationDate as Timestamp).toDate();
-        } else if (data.applicationDate instanceof Date) {
-            appDate = data.applicationDate;
-        } else {
-            appDate = new Date(data.applicationDate as string | number);
-        }
-
-        let approvalDt: Date | undefined = undefined;
-        if (data.approvalDate) {
-            if ((data.approvalDate as Timestamp)?.toDate) {
-                approvalDt = (data.approvalDate as Timestamp).toDate();
-            } else if (data.approvalDate instanceof Date) {
-                approvalDt = data.approvalDate;
-            } else {
-                approvalDt = new Date(data.approvalDate as string | number);
-            }
-        }
+        const parseTimestampOrDate = (field: any): Date | undefined => {
+            if (!field) return undefined;
+            if ((field as Timestamp)?.toDate) return (field as Timestamp).toDate();
+            if (field instanceof Date) return field;
+            try {
+                const parsed = new Date(field as string | number);
+                return isNaN(parsed.getTime()) ? undefined : parsed;
+            } catch { return undefined; }
+        };
         
         return {
           ...data,
           id: doc.id,
-          applicationDate: appDate,
-          approvalDate: approvalDt,
+          applicationDate: parseTimestampOrDate(data.applicationDate) || new Date(),
+          approvalDate: parseTimestampOrDate(data.approvalDate),
+          disbursedDate: parseTimestampOrDate(data.disbursedDate),
+          paidDate: parseTimestampOrDate(data.paidDate),
         } as Loan;
       });
       setLoans(fetchedLoans);
@@ -172,6 +167,11 @@ export default function LoansPage() {
       console.error("Loan application submission error:", error);
       toast({ title: "Error", description: "An unexpected error occurred while submitting your application.", variant: "destructive" });
     }
+  };
+
+  const handleOpenDetailModal = (loan: Loan) => {
+    setSelectedLoanForDetail(loan);
+    setIsDetailModalOpen(true);
   };
 
   return (
@@ -292,10 +292,10 @@ export default function LoansPage() {
                     <TableCell>{loan.termMonths} months</TableCell>
                     <TableCell><StatusBadgeLoan status={loan.status} /></TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" disabled> {/* TODO: Implement view loan */}
+                      <Button variant="ghost" size="icon" title="View Loan Details" onClick={() => handleOpenDetailModal(loan)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" disabled={loan.status !== 'pending'}> {/* TODO: Implement edit loan */}
+                      <Button variant="ghost" size="icon" disabled={loan.status !== 'pending'} title="Edit Application (Disabled)">
                         <Edit3 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -307,6 +307,14 @@ export default function LoansPage() {
           )}
         </CardContent>
       </Card>
+      {selectedLoanForDetail && (
+        <ViewUserLoanDetailModal
+            isOpen={isDetailModalOpen}
+            onOpenChange={setIsDetailModalOpen}
+            loan={selectedLoanForDetail}
+        />
+      )}
     </div>
   );
 }
+
