@@ -65,6 +65,8 @@ export interface Loan {
   status: "pending" | "approved" | "rejected" | "active" | "paid" | "defaulted";
   applicationDate: Date | Timestamp;
   approvalDate?: Date | Timestamp;
+  disbursedDate?: Date | Timestamp;
+  paidDate?: Date | Timestamp;
   purpose?: string;
   currency?: string;
 }
@@ -428,9 +430,16 @@ export interface EmailServiceDataPayload {
   transactionAmount?: string; // Formatted amount with currency
   transactionType?: string; // e.g., "Fund Transfer", "Admin Credit"
   transactionDate?: string;
+  transactionTime?: string;
   transactionId?: string;
+  transactionDescription?: string;
   recipientName?: string; // Optional, for transfers
   currentBalance?: string; // Formatted new balance with currency
+  accountNumber?: string; // Masked account number
+  transactionLocation?: string;
+  transactionValueDate?: string;
+  transactionRemarks?: string;
+  availableBalance?: string;
   // Generic Notification
   failureReason?: string;
   loanApplicationId?: string;
@@ -441,7 +450,6 @@ export interface EmailServiceDataPayload {
   fullName?: string;
   bankName?: string;
   emailLogoImageUrl?: string;
-  accountNumber?: string;
   // For Admin KYC Notification
   adminReviewUrl?: string;
   userId?: string; // User ID of the person who submitted KYC

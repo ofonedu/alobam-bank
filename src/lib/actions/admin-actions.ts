@@ -1,4 +1,3 @@
-
 // src/lib/actions/admin-actions.ts
 "use server";
 
@@ -82,10 +81,12 @@ export async function updateLoanStatusAction(
 ): Promise<UpdateLoanStatusResult> {
   try {
     const loanDocRef = doc(db, "loans", loanId);
-    const updateData: Partial<Pick<Loan, 'status' | 'approvalDate'>> = { status: newStatus };
+    const updateData: Partial<Pick<Loan, 'status' | 'approvalDate' | 'paidDate'>> = { status: newStatus };
 
     if (newStatus === "approved") {
-      updateData.approvalDate = new Date(); 
+      updateData.approvalDate = Timestamp.now(); 
+    } else if (newStatus === "paid") {
+      updateData.paidDate = Timestamp.now();
     }
 
     await updateDoc(loanDocRef, updateData);
@@ -102,6 +103,88 @@ export async function updateLoanStatusAction(
     };
   }
 }
+
+interface DisburseLoanResult {
+    success: boolean;
+    message: string;
+    transactionId?: string;
+    error?: string;
+}
+
+export async function disburseLoanAction(
+    loanId: string,
+    userId: string,
+    loanAmount: number,
+    loanCurrency?: string
+): Promise<DisburseLoanResult> {
+    if (!loanId || !userId || loanAmount <= 0) {
+        return { success: false, message: "Loan ID, User ID, and a positive loan amount are required." };
+    }
+
+    try {
+        const transactionResult = await runTransaction(db, async (transaction) => {
+            const loanDocRef = doc(db, "loans", loanId);
+            const userDocRef = doc(db, "users", userId);
+
+            const loanDoc = await transaction.get(loanDocRef);
+            const userDoc = await transaction.get(userDocRef);
+
+            if (!loanDoc.exists()) throw new Error("Loan application not found.");
+            if (!userDoc.exists()) throw new Error("User profile not found.");
+            
+            const loanData = loanDoc.data() as Loan;
+            const userProfileData = userDoc.data() as UserProfile;
+
+            if (loanData.status !== "approved") {
+                throw new Error("Loan must be in 'approved' status to be disbursed.");
+            }
+
+            const currentBalance = userProfileData.balance || 0;
+            const userPrimaryCurrency = userProfileData.primaryCurrency || "USD";
+            const effectiveLoanCurrency = loanCurrency || userPrimaryCurrency;
+
+            // For simplicity, assume loanCurrency matches user's primaryCurrency or will be handled as such.
+            // In a real-world scenario, currency conversion logic might be needed if they differ.
+            const newBalance = parseFloat((currentBalance + loanAmount).toFixed(2));
+            
+            transaction.update(userDocRef, { balance: newBalance });
+            transaction.update(loanDocRef, { status: "active", disbursedDate: Timestamp.now() });
+
+            const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
+                userId: userId,
+                date: Timestamp.now(),
+                description: `Loan disbursement (Loan ID: ${loanId})`,
+                amount: loanAmount, // Positive amount as it's a credit to user
+                type: "loan_disbursement",
+                status: "completed",
+                currency: effectiveLoanCurrency,
+                relatedTransferId: loanId, // Using this field to link to the loan
+            };
+            const transactionDocRef = doc(collection(db, "transactions"));
+            transaction.set(transactionDocRef, newTransactionData);
+
+            return { transactionId: transactionDocRef.id, newBalance: newBalance };
+        });
+
+        revalidatePath("/admin/loans");
+        revalidatePath("/admin/users");
+        revalidatePath("/admin/transactions");
+        revalidatePath(`/dashboard/transactions`);
+        revalidatePath(`/dashboard`);
+        revalidatePath(`/dashboard/profile`);
+
+        return { 
+            success: true, 
+            message: `Loan ${loanId} disbursed successfully. Amount: ${loanCurrency || '$'}${loanAmount.toFixed(2)}. New balance: ${loanCurrency || '$'}${transactionResult.newBalance.toFixed(2)}.`,
+            transactionId: transactionResult.transactionId 
+        };
+
+    } catch (error: any) {
+        console.error("Error disbursing loan:", error);
+        return { success: false, message: error.message || "Failed to disburse loan.", error: error.message };
+    }
+}
+
 
 // --- User Role Actions ---
 interface UpdateUserRoleResult {
@@ -189,24 +272,29 @@ export async function issueManualAdjustmentAction(
         userFullName: userProfileData.displayName || `${userProfileData.firstName} ${userProfileData.lastName}`.trim() || targetUserId,
         userEmail: userProfileData.email,
         transactionDate: newTransactionData.date.toDate().toISOString(),
-        accountNumber: userProfileData.accountNumber, // Ensure accountNumber is available
-        adjustmentType: type, // Pass the original 'type' for email differentiation
+        accountNumber: userProfileData.accountNumber,
+        adjustmentType: type,
       }; 
     });
     
     const successMessage = `Manual ${type} of ${transactionResult.userCurrency} ${amount.toFixed(2)} for user ${transactionResult.userFullName} processed. New balance: ${transactionResult.userCurrency} ${transactionResult.newBalance.toFixed(2)}.`;
 
-    // Send email notification for manual adjustment
     if (transactionResult.userEmail) {
+        const dateOfTransaction = new Date(transactionResult.transactionDate);
         const emailPayload = {
             fullName: transactionResult.userFullName,
             transactionAmount: formatCurrency(Math.abs(adjustmentAmount), transactionResult.userCurrency),
             transactionType: transactionResult.adjustmentType === "credit" ? "Credit" : "Debit",
-            transactionDate: transactionResult.transactionDate,
+            transactionDate: dateOfTransaction.toLocaleDateString(),
+            transactionTime: dateOfTransaction.toLocaleTimeString(),
+            transactionValueDate: dateOfTransaction.toLocaleDateString(),
             transactionId: transactionResult.transactionId,
             transactionDescription: description,
             accountNumber: transactionResult.accountNumber ? `******${transactionResult.accountNumber.slice(-4)}` : "N/A",
             currentBalance: formatCurrency(transactionResult.newBalance, transactionResult.userCurrency),
+            availableBalance: formatCurrency(transactionResult.newBalance, transactionResult.userCurrency), // Assuming same for simplicity
+            transactionLocation: "Admin Platform",
+            transactionRemarks: description,
             loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/transactions`,
         };
         const emailNotificationType = transactionResult.adjustmentType === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
@@ -439,7 +527,7 @@ export async function approveKycAction(kycId: string, userId: string, adminId?: 
 
     const kycUpdate: Partial<KYCData> = {
       status: "verified",
-      reviewedAt: new Date(), 
+      reviewedAt: Timestamp.now(), 
       reviewedBy: adminId || "system_admin_placeholder", 
       rejectionReason: "" 
     };
@@ -505,7 +593,7 @@ export async function rejectKycAction(kycId: string, userId: string, rejectionRe
     const kycUpdate: Partial<KYCData> = {
       status: "rejected",
       rejectionReason,
-      reviewedAt: new Date(), 
+      reviewedAt: Timestamp.now(), 
       reviewedBy: adminId || "system_admin_placeholder", 
     };
     const userProfileUpdate: Partial<UserProfile> = { kycStatus: "rejected" };
@@ -735,5 +823,3 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
     };
   }
 }
-
-    

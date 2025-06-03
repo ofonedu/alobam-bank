@@ -5,13 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, CheckCircle, XCircle, Eye, Loader2, AlertTriangle } from "lucide-react";
-import type { AdminLoanApplicationView } from "@/types";
+import { Search, CheckCircle, XCircle, Eye, Loader2, AlertTriangle, LandmarkIcon, DollarSignIcon } from "lucide-react";
+import type { AdminLoanApplicationView, Loan } from "@/types";
 import { useState, useEffect } from 'react';
 import { collection, getDocs, Timestamp, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { updateLoanStatusAction } from "@/lib/actions/admin-actions";
+import { updateLoanStatusAction, disburseLoanAction } from "@/lib/actions/admin-actions";
 import { useToast } from "@/hooks/use-toast";
 import { ViewLoanDetailModal } from "./components/ViewLoanDetailModal";
 
@@ -27,7 +27,7 @@ const LoanStatusBadge = ({ status }: { status: AdminLoanApplicationView["status"
   }
 };
 
-const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
+const formatDateDisplay = (dateInput: Date | Timestamp | undefined | null): string => {
     if (!dateInput) return "N/A";
     let date: Date;
     if ((dateInput as Timestamp)?.toDate && typeof (dateInput as Timestamp).toDate === 'function') {
@@ -36,7 +36,7 @@ const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
       date = dateInput;
     } else {
       try {
-        const parsed = new Date((dateInput as Timestamp).toDate());
+        const parsed = new Date(dateInput as string | number); // Attempt to parse if it's a string/number
         if (!isNaN(parsed.getTime())) {
           date = parsed;
         } else {
@@ -56,6 +56,8 @@ export default function AdminLoansPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingLoanId, setProcessingLoanId] = useState<string | null>(null);
+  const [disbursingLoanId, setDisbursingLoanId] = useState<string | null>(null);
+
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<AdminLoanApplicationView | null>(null);
@@ -71,32 +73,24 @@ export default function AdminLoansPage() {
       const fetchedLoans: AdminLoanApplicationView[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        // Ensure dates are JS Date objects
-        let appDate: Date;
-        if (data.applicationDate && (data.applicationDate as Timestamp).toDate) {
-          appDate = (data.applicationDate as Timestamp).toDate();
-        } else if (data.applicationDate instanceof Date) {
-          appDate = data.applicationDate;
-        } else {
-          appDate = new Date(data.applicationDate); // Fallback attempt
-        }
-
-        let approvalDt: Date | undefined = undefined;
-        if (data.approvalDate) {
-          if ((data.approvalDate as Timestamp).toDate) {
-            approvalDt = (data.approvalDate as Timestamp).toDate();
-          } else if (data.approvalDate instanceof Date) {
-            approvalDt = data.approvalDate;
-          } else {
-            approvalDt = new Date(data.approvalDate); // Fallback attempt
-          }
-        }
+        
+        const parseTimestampOrDate = (field: any): Date | undefined => {
+            if (!field) return undefined;
+            if ((field as Timestamp)?.toDate) return (field as Timestamp).toDate();
+            if (field instanceof Date) return field;
+            try {
+                const parsed = new Date(field as string | number);
+                return isNaN(parsed.getTime()) ? undefined : parsed;
+            } catch { return undefined; }
+        };
         
         fetchedLoans.push({
           id: doc.id,
           ...data,
-          applicationDate: appDate,
-          approvalDate: approvalDt,
+          applicationDate: parseTimestampOrDate(data.applicationDate) || new Date(), // Fallback if parsing fails
+          approvalDate: parseTimestampOrDate(data.approvalDate),
+          disbursedDate: parseTimestampOrDate(data.disbursedDate),
+          paidDate: parseTimestampOrDate(data.paidDate),
         } as AdminLoanApplicationView);
       });
       setLoanApplications(fetchedLoans);
@@ -117,7 +111,7 @@ export default function AdminLoansPage() {
     setIsDetailModalOpen(true);
   };
 
-  const handleUpdateLoanStatus = async (loanId: string, userId: string, newStatus: "approved" | "rejected") => {
+  const handleUpdateLoanStatus = async (loanId: string, userId: string, newStatus: Loan["status"]) => {
     setProcessingLoanId(loanId);
     const result = await updateLoanStatusAction(loanId, userId, newStatus);
     if (result.success) {
@@ -127,6 +121,18 @@ export default function AdminLoansPage() {
       toast({ title: "Error", description: result.message || "Failed to update loan status.", variant: "destructive" });
     }
     setProcessingLoanId(null);
+  };
+  
+  const handleDisburseLoan = async (loan: AdminLoanApplicationView) => {
+    setDisbursingLoanId(loan.id);
+    const result = await disburseLoanAction(loan.id, loan.userId, loan.amount, loan.currency);
+    if (result.success) {
+        toast({ title: "Success", description: result.message });
+        fetchLoans();
+    } else {
+        toast({ title: "Error", description: result.message || "Failed to disburse loan.", variant: "destructive"});
+    }
+    setDisbursingLoanId(null);
   };
 
 
@@ -140,8 +146,8 @@ export default function AdminLoansPage() {
     <div className="w-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Manage Loan Applications</h1>
-          <p className="text-muted-foreground">Review, approve, or reject loan applications.</p>
+          <h1 className="text-3xl font-bold flex items-center"><LandmarkIcon className="mr-2 h-8 w-8 text-primary"/>Manage Loan Applications</h1>
+          <p className="text-muted-foreground">Review, approve, disburse, or reject loan applications.</p>
         </div>
       </div>
       
@@ -186,7 +192,9 @@ export default function AdminLoansPage() {
                     <TableHead>Applicant</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Term</TableHead>
-                    <TableHead>Applied On</TableHead>
+                    <TableHead>Applied</TableHead>
+                    <TableHead>Disbursed</TableHead>
+                    <TableHead>Paid</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
@@ -202,6 +210,8 @@ export default function AdminLoansPage() {
                       <TableCell>${loan.amount.toLocaleString()}</TableCell>
                       <TableCell>{loan.termMonths} months</TableCell>
                       <TableCell>{formatDateDisplay(loan.applicationDate)}</TableCell>
+                      <TableCell>{formatDateDisplay(loan.disbursedDate)}</TableCell>
+                      <TableCell>{formatDateDisplay(loan.paidDate)}</TableCell>
                       <TableCell><LoanStatusBadge status={loan.status} /></TableCell>
                       <TableCell className="text-center space-x-1">
                         <Button variant="ghost" size="icon" title="View Details" onClick={() => handleOpenDetailModal(loan)}>
@@ -215,9 +225,9 @@ export default function AdminLoansPage() {
                               className="text-green-600 hover:text-green-700" 
                               title="Approve Loan" 
                               onClick={() => handleUpdateLoanStatus(loan.id, loan.userId, 'approved')}
-                              disabled={processingLoanId === loan.id}
+                              disabled={processingLoanId === loan.id || disbursingLoanId === loan.id}
                             >
-                              {processingLoanId === loan.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle className="h-4 w-4" />}
+                              {(processingLoanId === loan.id && loan.status === 'pending') ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle className="h-4 w-4" />}
                             </Button>
                             <Button 
                               variant="ghost" 
@@ -225,11 +235,47 @@ export default function AdminLoansPage() {
                               className="text-red-600 hover:text-red-700" 
                               title="Reject Loan" 
                               onClick={() => handleUpdateLoanStatus(loan.id, loan.userId, 'rejected')}
-                              disabled={processingLoanId === loan.id}
+                              disabled={processingLoanId === loan.id || disbursingLoanId === loan.id}
                             >
-                            {processingLoanId === loan.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <XCircle className="h-4 w-4" />}
+                            {(processingLoanId === loan.id && loan.status === 'pending') ? <Loader2 className="h-4 w-4 animate-spin"/> : <XCircle className="h-4 w-4" />}
                             </Button>
                           </>
+                        )}
+                        {loan.status === 'approved' && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Disburse Loan"
+                                onClick={() => handleDisburseLoan(loan)}
+                                disabled={disbursingLoanId === loan.id || processingLoanId === loan.id}
+                            >
+                                {disbursingLoanId === loan.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSignIcon className="h-4 w-4" />}
+                            </Button>
+                        )}
+                        {loan.status === 'active' && (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-green-600 hover:text-green-700"
+                                    title="Mark as Paid"
+                                    onClick={() => handleUpdateLoanStatus(loan.id, loan.userId, 'paid')}
+                                    disabled={processingLoanId === loan.id || disbursingLoanId === loan.id}
+                                >
+                                   {(processingLoanId === loan.id && loan.status === 'active') ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700"
+                                    title="Mark as Defaulted"
+                                    onClick={() => handleUpdateLoanStatus(loan.id, loan.userId, 'defaulted')}
+                                    disabled={processingLoanId === loan.id || disbursingLoanId === loan.id}
+                                >
+                                  {(processingLoanId === loan.id && loan.status === 'active') ? <Loader2 className="h-4 w-4 animate-spin"/> : <XCircle className="h-4 w-4" />}
+                                </Button>
+                            </>
                         )}
                       </TableCell>
                     </TableRow>
