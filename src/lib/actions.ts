@@ -2,14 +2,15 @@
 // src/lib/actions.ts
 "use server";
 
-import { db, storage } from "@/lib/firebase";
-import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData } from "@/lib/schemas";
+import { auth, db, storage } from "@/lib/firebase";
+import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData, ForgotPasswordSchema } from "@/lib/schemas";
 import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, ClientKYCData, KYCSubmissionResult } from "@/types";
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
 import { validateAuthorizationCode, markCodeAsUsed } from "./actions/admin-code-actions";
 import { getPlatformSettingsAction } from "./actions/admin-settings-actions";
+import { sendPasswordResetEmail } from "firebase/auth";
 
 export async function submitKycAction(
   userId: string,
@@ -575,5 +576,32 @@ export async function submitSupportTicketAction(
       message: "Failed to submit support ticket.",
       error: error.message,
     };
+  }
+}
+
+
+interface RequestPasswordResetResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export async function requestPasswordResetAction(email: string): Promise<RequestPasswordResetResult> {
+  const validatedData = ForgotPasswordSchema.safeParse({ email });
+  if (!validatedData.success) {
+    return {
+      success: false,
+      message: "Invalid email address.",
+      error: validatedData.error.flatten().fieldErrors.email?.[0] || "Validation failed.",
+    };
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, validatedData.data.email);
+    return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
+  } catch (error: any) {
+    console.error("Error sending password reset email:", error);
+    // Don't reveal if email exists or not for security reasons
+    return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
   }
 }

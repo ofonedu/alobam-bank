@@ -15,7 +15,7 @@ let resendInitialized = false;
 
 async function initializeResendClient(): Promise<boolean> {
   if (resendInitialized && resend && fromEmailAddress && platformNameForEmail) {
-    console.log("Resend client already initialized.");
+    console.log("Resend client already initialized and essential settings are present.");
     return true;
   }
 
@@ -27,11 +27,11 @@ async function initializeResendClient(): Promise<boolean> {
       const apiKey = settingsResult.settings.resendApiKey;
       const fromEmail = settingsResult.settings.resendFromEmail;
       const pName = settingsResult.settings.platformName;
-      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl; // Store this separately
+      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl; 
 
       if (!apiKey) {
         console.error("Resend client initialization FAILED: Resend API Key is MISSING from settings.");
-        resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = pName || "Wohana Funds";
+        resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = pName || "Wohana Funds"; // Set platformName even if other settings fail
         return false;
       }
       if (!fromEmail) {
@@ -52,12 +52,12 @@ async function initializeResendClient(): Promise<boolean> {
 
     } else {
       console.error("Resend client initialization FAILED: Could not retrieve platform settings.", settingsResult.error);
-      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = null; emailLogoImageUrlForEmail = undefined;
+      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; // Fallback platformName
       return false;
     }
   } catch (error) {
     console.error("Resend client initialization EXCEPTION:", error);
-    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = null; emailLogoImageUrlForEmail = undefined;
+    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; // Fallback platformName
     return false;
   }
 }
@@ -99,7 +99,7 @@ export async function sendTransactionalEmail(
   
   console.log("sendTransactionalEmail: Valid HTML body received (first 200 chars):", htmlBody.substring(0, 200) + "...");
 
-  const formattedFrom = `"${platformNameForEmail}" <${fromEmailAddress}>`;
+  const formattedFrom = `${platformNameForEmail} <${fromEmailAddress}>`;
   console.log(`sendTransactionalEmail: Constructed 'From' field for Resend: ${formattedFrom}`);
 
   const emailPayloadToResend = {
@@ -142,7 +142,7 @@ export async function sendTransactionalEmail(
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: string, // Changed from EmailType enum to string
+  emailType: string,
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; html: string | null }> {
   
@@ -150,16 +150,16 @@ export async function getEmailTemplateAndSubject(
 
   if (!resendInitialized) {
     console.log("getEmailTemplateAndSubject: Resend client not initialized, attempting initialization for template data...");
-    await initializeResendClient(); // This populates platformNameForEmail and emailLogoImageUrlForEmail
+    await initializeResendClient(); 
   }
   
-  const currentPlatformName = platformNameForEmail || "Wohana Funds"; // Fallback if still not set
-  const currentEmailLogoUrl = emailLogoImageUrlForEmail; // Use the module-level variable
+  const currentPlatformName = platformNameForEmail || "Wohana Funds"; 
+  const currentEmailLogoUrl = emailLogoImageUrlForEmail;
 
   const templatePayload = {
     ...payload,
     bankName: currentPlatformName,
-    emailLogoImageUrl: currentEmailLogoUrl, // Pass the fetched or default URL
+    emailLogoImageUrl: currentEmailLogoUrl,
   };
   console.log("getEmailTemplateAndSubject: Payload for template function:", templatePayload);
 
@@ -168,11 +168,12 @@ export async function getEmailTemplateAndSubject(
   let emailSubject = `Notification from ${currentPlatformName}`;
 
   try {
-    switch (emailType) { // Using string literal for case
+    switch (emailType) { 
       case "WELCOME":
         emailSubject = `Welcome to ${currentPlatformName}!`;
         htmlContent = emailTemplates.welcomeEmailTemplate(templatePayload);
         break;
+      // PASSWORD_RESET case is removed as Firebase handles it
       default:
         console.warn(`getEmailTemplateAndSubject: No specific HTML template defined for email type: ${emailType}. Using basic fallback.`);
         htmlContent = `<p>This is a generic notification from ${currentPlatformName}.</p><p>Details: ${JSON.stringify(payload)}</p>`;
@@ -190,5 +191,3 @@ export async function getEmailTemplateAndSubject(
     html: htmlContent,
   };
 }
-
-    

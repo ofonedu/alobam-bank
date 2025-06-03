@@ -47,6 +47,11 @@ export const ChangePasswordSchema = z.object({
 });
 export type ChangePasswordFormData = z.infer<typeof ChangePasswordSchema>;
 
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email({ message: "Please enter a valid email address." }),
+});
+export type ForgotPasswordFormData = z.infer<typeof ForgotPasswordSchema>;
+
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];

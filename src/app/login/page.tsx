@@ -48,6 +48,14 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <AuthForm onSubmit={handleLogin} />
+          <div className="mt-4 text-center text-sm">
+            <Link
+              href="/forgot-password"
+              className="text-muted-foreground hover:text-primary hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account?{" "}
             <Link href="/register" className="font-medium text-primary hover:underline">
@@ -59,4 +67,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

@@ -164,7 +164,7 @@ export interface PlatformSettings {
   requireTaxClearance?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
-  emailLogoImageUrl?: string; // Added for email logo
+  emailLogoImageUrl?: string; 
   resendApiKey?: string;
   resendFromEmail?: string;
 }
@@ -418,13 +418,6 @@ export interface AuthorizationCode {
   generatedBy: string;
 }
 
-// Removed EmailType enum as we are switching to string literals for runtime safety
-// export enum EmailType {
-//   WELCOME = "WELCOME",
-//   PASSWORD_RESET = "PASSWORD_RESET",
-//   // ... other types
-// }
-
 export interface EmailServiceDataPayload {
   userName?: string;
   loginLink?: string;
@@ -442,7 +435,7 @@ export interface EmailServiceDataPayload {
   // For the new HTML template
   fullName?: string;
   bankName?: string;
-  emailLogoImageUrl?: string; // Changed from iconChar
+  emailLogoImageUrl?: string;
   accountNumber?: string;
 }
 
