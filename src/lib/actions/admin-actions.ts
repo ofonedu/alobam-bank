@@ -1,3 +1,4 @@
+
 // src/lib/actions/admin-actions.ts
 "use server";
 
@@ -188,6 +189,8 @@ export async function issueManualAdjustmentAction(
         userFullName: userProfileData.displayName || `${userProfileData.firstName} ${userProfileData.lastName}`.trim() || targetUserId,
         userEmail: userProfileData.email,
         transactionDate: newTransactionData.date.toDate().toISOString(),
+        accountNumber: userProfileData.accountNumber, // Ensure accountNumber is available
+        adjustmentType: type, // Pass the original 'type' for email differentiation
       }; 
     });
     
@@ -198,14 +201,15 @@ export async function issueManualAdjustmentAction(
         const emailPayload = {
             fullName: transactionResult.userFullName,
             transactionAmount: formatCurrency(Math.abs(adjustmentAmount), transactionResult.userCurrency),
-            transactionType: type === "credit" ? "Credit - Admin Adjustment" : "Debit - Admin Adjustment",
+            transactionType: transactionResult.adjustmentType === "credit" ? "Credit" : "Debit",
             transactionDate: transactionResult.transactionDate,
             transactionId: transactionResult.transactionId,
             transactionDescription: description,
+            accountNumber: transactionResult.accountNumber ? `******${transactionResult.accountNumber.slice(-4)}` : "N/A",
             currentBalance: formatCurrency(transactionResult.newBalance, transactionResult.userCurrency),
             loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard/transactions`,
         };
-        const emailNotificationType = type === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
+        const emailNotificationType = transactionResult.adjustmentType === "credit" ? "CREDIT_NOTIFICATION" : "DEBIT_NOTIFICATION";
         try {
             const emailContent = await getEmailTemplateAndSubject(emailNotificationType, emailPayload);
             if (emailContent.html) {
@@ -236,7 +240,8 @@ export async function issueManualAdjustmentAction(
       transactionId: transactionResult.transactionId,
     };
 
-  } catch (error: any) {
+  } catch (error: any)
+{
     console.error("Error during manual adjustment:", error);
     return {
       success: false,
@@ -731,3 +736,4 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
   }
 }
 
+    
