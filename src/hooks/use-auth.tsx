@@ -13,7 +13,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
-  deleteUser as deleteAuthUser, // Renamed to avoid conflict
+  deleteUser as deleteAuthUser, 
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import type { UserProfile, AuthUser } from "@/types";
@@ -142,7 +142,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signUp = async (data: RegisterFormData) => {
     setLoading(true);
-    let newAuthUser: FirebaseUser | null = null; // Changed from any to FirebaseUser | null
+    let newAuthUser: FirebaseUser | null = null; 
     try {
       console.log("signUp: Attempting to create Firebase Auth user for:", data.email);
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
@@ -183,7 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (newAuthUser) {
           console.warn("signUp: Attempting to delete Firebase Auth user due to Firestore profile creation failure. UID:", newAuthUser.uid);
           try {
-            await deleteAuthUser(newAuthUser); // Use aliased import
+            await deleteAuthUser(newAuthUser); 
             console.log("signUp: Firebase Auth user deleted successfully after Firestore failure. UID:", newAuthUser.uid);
           } catch (deleteError: any) {
             console.error("signUp: CRITICAL - Failed to delete Firebase Auth user after Firestore failure. Orphaned Auth user may exist. UID:", newAuthUser.uid, deleteError);
@@ -206,11 +206,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
           accountNumber: newAccountNumber,
           loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
+          supportEmail: settingsResult.settings?.supportEmail,
         };
         console.log("signUp: Email payload for template:", emailPayload);
 
         try {
-          const emailContent = await getEmailTemplateAndSubject("WELCOME", emailPayload); // Using string literal
+          const emailContent = await getEmailTemplateAndSubject("WELCOME", emailPayload); 
 
           if (emailContent.html) {
             console.log(`signUp: Attempting to send welcome email. Subject: "${emailContent.subject}"`);
@@ -243,12 +244,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return newAuthUser as AuthUser;
     } catch (error: any) {
       setLoading(false);
-      // Enhanced error logging for client-side debugging
       console.error("signUp: CLIENT-SIDE CAUGHT ERROR during overall signup for:", data.email, "Error Code:", error.code, "Error Message:", error.message, "Full Error:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
       if (newAuthUser && error.code !== 'auth/email-already-in-use' && !error.message?.includes("Firestore")) {
          console.warn("signUp: Attempting to delete Firebase Auth user due to an error after creation but before Firestore (or non-Firestore error). UID:", newAuthUser.uid);
          try {
-            await deleteAuthUser(newAuthUser); // Use aliased import
+            await deleteAuthUser(newAuthUser); 
             console.log("signUp: Firebase Auth user deleted successfully due to post-creation error. UID:", newAuthUser.uid);
           } catch (deleteError: any) {
             console.error("signUp: CRITICAL - Failed to delete Firebase Auth user. Orphaned Auth user may exist. UID:", newAuthUser.uid, deleteError);
@@ -269,6 +269,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await reauthenticateWithCredential(currentUser, credential);
       await updatePassword(currentUser, data.newPassword);
       setLoading(false);
+
+      // Send Password Changed Notification
+      const settingsResult = await getPlatformSettingsAction();
+      const emailPayload = {
+        fullName: userProfile?.displayName || currentUser.displayName || "Valued User",
+        bankName: settingsResult.settings?.platformName || "Wohana Funds",
+        emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
+        loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002'}/dashboard`,
+        passwordChangedDate: new Date().toISOString(),
+        supportEmail: settingsResult.settings?.supportEmail,
+      };
+
+      try {
+        const emailContent = await getEmailTemplateAndSubject("PASSWORD_CHANGED", emailPayload);
+        if (emailContent.html) {
+          sendTransactionalEmail({
+            to: currentUser.email,
+            subject: emailContent.subject,
+            htmlBody: emailContent.html,
+            textBody: `Your password for ${emailPayload.bankName} was successfully changed on ${new Date(emailPayload.passwordChangedDate).toLocaleDateString()}. If you did not make this change, please contact support immediately.`,
+          }).then(emailResult => {
+            if (!emailResult.success) console.error("Failed to send password changed email:", emailResult.error);
+            else console.log("Password changed email sent successfully.");
+          });
+        }
+      } catch (emailError: any) {
+        console.error("Error preparing/sending password changed email:", emailError.message);
+      }
+
       return { success: true, message: "Password updated successfully." };
     } catch (error: any) {
       setLoading(false);

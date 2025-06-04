@@ -1,3 +1,4 @@
+
 // src/lib/email-templates.tsx
 import * as React from 'react';
 import { formatCurrency } from './utils'; // Assuming you have this utility
@@ -22,6 +23,9 @@ interface EmailTemplateProps {
   transactionDescription?: string;
   recipientName?: string;
   currentBalance?: string; // Formatted new balance with currency
+  // Password Changed Specific
+  passwordChangedDate?: string;
+  supportEmail?: string;
 }
 
 // Common styles
@@ -47,12 +51,13 @@ function getLogoDisplay(bankName: string = "Wohana Funds", emailLogoImageUrl?: s
   return `<div style="width:50px; height:50px; line-height:50px; text-align:center; background-color:#002147; color:#FFD700; font-size:24px; font-weight:bold; border-radius:50%; margin:0 auto 10px auto;">${firstChar}</div><span style="font-size:24px;font-weight:bold;color:#002147;line-height:1.2;">${bankName}</span>`;
 }
 
-function getFooter(bankName: string = "Wohana Funds"): string {
+function getFooter(bankName: string = "Wohana Funds", supportEmail?: string): string {
+  const effectiveSupportEmail = supportEmail || `support@${bankName.toLowerCase().replace(/\s+/g, '')}.com`;
   return `
     <div style="${footerStyle}">
       <p>&copy; ${new Date().getFullYear()} ${bankName}. All rights reserved.</p>
       <p>123 Wohana Street, Finance City, FC 12345</p>
-      <p>If you have questions, contact support at <a href="mailto:support@${bankName.toLowerCase().replace(/\s+/g, '')}.com" style="${footerLinkStyle}">support@${bankName.toLowerCase().replace(/\s+/g, '')}.com</a>.</p>
+      <p>If you have questions, contact support at <a href="mailto:${effectiveSupportEmail}" style="${footerLinkStyle}">${effectiveSupportEmail}</a>.</p>
     </div>
   `;
 }
@@ -63,9 +68,10 @@ export function welcomeEmailTemplate({
   emailLogoImageUrl,
   accountNumber = "N/A",
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
 
   return `
 <!DOCTYPE html>
@@ -104,9 +110,10 @@ export function kycSubmittedEmailTemplate({
   emailLogoImageUrl,
   kycSubmissionDate,
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
   const submissionDateDisplay = kycSubmissionDate ? new Date(kycSubmissionDate).toLocaleDateString() : "recently";
 
   return `
@@ -145,9 +152,10 @@ export function kycApprovedEmailTemplate({
   bankName = "Wohana Funds",
   emailLogoImageUrl,
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
 
   return `
 <!DOCTYPE html>
@@ -185,9 +193,10 @@ export function kycRejectedEmailTemplate({
   emailLogoImageUrl,
   kycRejectionReason = "Please review your submission and ensure all information is accurate and documents are clear.",
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
 
   return `
 <!DOCTYPE html>
@@ -228,9 +237,10 @@ export function adminKycSubmittedEmailTemplate({
   emailLogoImageUrl,
   kycSubmissionDate,
   adminReviewUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
   const submissionDateDisplay = kycSubmissionDate ? new Date(kycSubmissionDate).toLocaleDateString() : "recently";
 
   return `
@@ -277,9 +287,10 @@ export function debitNotificationEmailTemplate({
   recipientName,
   currentBalance,
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
   const dateDisplay = transactionDate ? new Date(transactionDate).toLocaleString() : "Recently";
 
   return `
@@ -332,9 +343,10 @@ export function creditNotificationEmailTemplate({
   transactionDescription,
   currentBalance,
   loginUrl = "#",
+  supportEmail,
 }: EmailTemplateProps): string {
   const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
-  const footerHtml = getFooter(bankName);
+  const footerHtml = getFooter(bankName, supportEmail);
   const dateDisplay = transactionDate ? new Date(transactionDate).toLocaleString() : "Recently";
 
   return `
@@ -373,3 +385,48 @@ export function creditNotificationEmailTemplate({
 </html>
   `;
 }
+
+export function passwordChangedEmailTemplate({
+  fullName = "Valued Customer",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  passwordChangedDate,
+  loginUrl = "#",
+  supportEmail,
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName, supportEmail);
+  const dateDisplay = passwordChangedDate ? new Date(passwordChangedDate).toLocaleString() : "Recently";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Password Changed Successfully - ${bankName}</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#002147;">Password Change Confirmation</p>
+      <p style="${pStyle}">Dear <span style="${capitalizeStyle}">${fullName}</span>,</p>
+      <p style="${pStyle}">This email confirms that the password for your <strong style="${strongStyle}">${bankName}</strong> account was successfully changed on <strong style="${strongStyle}">${dateDisplay}</strong>.</p>
+      <p style="${pStyle}">If you did not make this change, please contact our support team immediately at <a href="mailto:${supportEmail || 'support@example.com'}" style="${footerLinkStyle}">${supportEmail || 'support@example.com'}</a> or by replying to this email.</p>
+      <p style="${pStyle}">If you made this change, no further action is required.</p>
+      <div style="${buttonContainerStyle}">
+        <a href="${loginUrl}" style="${buttonStyle}">Log In to Your Account</a>
+      </div>
+      <p style="${pStyle}">Best regards,<br>The ${bankName} Team</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
+
+    

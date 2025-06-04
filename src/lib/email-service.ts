@@ -1,3 +1,4 @@
+
 // src/lib/email-service.ts
 "use server";
 
@@ -10,6 +11,7 @@ let resend: Resend | null = null;
 let fromEmailAddress: string | null = null;
 let platformNameForEmail: string | null = null;
 let emailLogoImageUrlForEmail: string | undefined = undefined;
+let platformSupportEmailForFooter: string | undefined = undefined;
 let resendInitialized = false;
 
 async function initializeResendClient(): Promise<boolean> {
@@ -26,7 +28,8 @@ async function initializeResendClient(): Promise<boolean> {
       const apiKey = settingsResult.settings.resendApiKey;
       const fromEmail = settingsResult.settings.resendFromEmail;
       const pName = settingsResult.settings.platformName;
-      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl; // Capture this for use in templates
+      emailLogoImageUrlForEmail = settingsResult.settings.emailLogoImageUrl;
+      platformSupportEmailForFooter = settingsResult.settings.supportEmail;
 
       if (!apiKey) {
         console.error("Resend client initialization FAILED: Resend API Key is MISSING from settings.");
@@ -48,17 +51,17 @@ async function initializeResendClient(): Promise<boolean> {
       resend = new Resend(apiKey);
       fromEmailAddress = fromEmail;
       resendInitialized = true;
-      console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}, Email Logo: ${emailLogoImageUrlForEmail || 'Not set'}`);
+      console.log(`Resend client initialized successfully. From Email: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}, Email Logo: ${emailLogoImageUrlForEmail || 'Not set'}, Support Email for Footer: ${platformSupportEmailForFooter || 'Not set'}`);
       return true;
 
     } else {
       console.error("Resend client initialization FAILED: Could not retrieve platform settings.", settingsResult.error);
-      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined;
+      resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; platformSupportEmailForFooter = undefined;
       return false;
     }
   } catch (error) {
     console.error("Resend client initialization EXCEPTION:", error);
-    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined;
+    resendInitialized = false; resend = null; fromEmailAddress = null; platformNameForEmail = "Wohana Funds"; emailLogoImageUrlForEmail = undefined; platformSupportEmailForFooter = undefined;
     return false;
   }
 }
@@ -88,7 +91,6 @@ export async function sendTransactionalEmail(
   
   console.log(`sendTransactionalEmail: Client initialized. From: ${fromEmailAddress}, Platform Name: ${platformNameForEmail}`);
 
-  // Check if htmlBody is just DOCTYPE or empty
   if (!htmlBody || typeof htmlBody !== 'string' || htmlBody.trim() === '' || htmlBody.trim().toLowerCase().startsWith("<!doctype html public")) {
     const bodyIssueMsg = `sendTransactionalEmail: CRITICAL - HTML body is empty, invalid, or only a DOCTYPE. This indicates a problem with email template generation. HTML received (first 100 chars): "${htmlBody ? htmlBody.substring(0,100) + '...' : 'NULL or EMPTY'}"`;
     console.error(bodyIssueMsg);
@@ -109,7 +111,7 @@ export async function sendTransactionalEmail(
       to: [to],
       subject: subject,
       html: htmlBody,
-      text: textBody || subject, // Fallback text body
+      text: textBody || subject, 
   };
 
   console.log("sendTransactionalEmail: Payload being sent to Resend (HTML/Text truncated):", JSON.stringify(emailPayloadToResend, (key, value) => (key === 'html' || key === 'text') && typeof value === 'string' ? value.substring(0, 100) + '...' : value));
@@ -144,7 +146,7 @@ export async function sendTransactionalEmail(
 }
 
 export async function getEmailTemplateAndSubject(
-  emailType: string, // Changed from EmailType to string
+  emailType: string, 
   payload: EmailServiceDataPayload
 ): Promise<{ subject: string; html: string | null }> {
   
@@ -152,28 +154,27 @@ export async function getEmailTemplateAndSubject(
 
   if (!resendInitialized) {
     console.log("getEmailTemplateAndSubject: Resend client not initialized, attempting initialization for template data...");
-    await initializeResendClient(); // Ensures platformNameForEmail and emailLogoImageUrlForEmail are populated
+    await initializeResendClient(); 
   }
   
-  // Use the globally available platformNameForEmail and emailLogoImageUrlForEmail
-  // These are set by initializeResendClient
-  const currentPlatformName = platformNameForEmail || "Wohana Funds"; // Fallback if still not set
-  const currentEmailLogoUrl = emailLogoImageUrlForEmail; // This can be undefined if not set
+  const currentPlatformName = platformNameForEmail || "Wohana Funds"; 
+  const currentEmailLogoUrl = emailLogoImageUrlForEmail;
+  const currentSupportEmailForFooter = platformSupportEmailForFooter;
 
-  // Ensure essential fields for templates are passed along with any type-specific payload
-  const templatePayload = {
+  const templatePayload: EmailServiceDataPayload & { bankName: string; emailLogoImageUrl?: string; supportEmail?: string } = {
     ...payload,
     bankName: currentPlatformName,
-    emailLogoImageUrl: currentEmailLogoUrl, // Pass the potentially undefined logo URL
+    emailLogoImageUrl: currentEmailLogoUrl,
+    supportEmail: currentSupportEmailForFooter,
   };
   console.log("getEmailTemplateAndSubject: Payload for template function:", templatePayload);
 
 
   let htmlContent: string | null = null;
-  let emailSubject = `Notification from ${currentPlatformName}`; // Default subject
+  let emailSubject = `Notification from ${currentPlatformName}`; 
 
   try {
-    switch (emailType) { // Use string literals for cases
+    switch (emailType) { 
       case "WELCOME":
         emailSubject = `Welcome to ${currentPlatformName}!`;
         htmlContent = emailTemplates.welcomeEmailTemplate(templatePayload);
@@ -202,7 +203,10 @@ export async function getEmailTemplateAndSubject(
         emailSubject = `Credit Transaction Alert - ${currentPlatformName}`;
         htmlContent = emailTemplates.creditNotificationEmailTemplate(templatePayload);
         break;
-      // Add other cases as needed
+      case "PASSWORD_CHANGED":
+        emailSubject = `Password Changed Successfully - ${currentPlatformName}`;
+        htmlContent = emailTemplates.passwordChangedEmailTemplate(templatePayload);
+        break;
       default:
         console.warn(`getEmailTemplateAndSubject: No specific HTML template defined for email type: ${emailType}. Using basic fallback.`);
         htmlContent = `<p>This is a generic notification from ${currentPlatformName}.</p><p>Details: ${JSON.stringify(payload)}</p>`;
@@ -210,7 +214,7 @@ export async function getEmailTemplateAndSubject(
   } catch (templateError: any) {
     console.error(`getEmailTemplateAndSubject: Error generating HTML for email type ${emailType}:`, templateError.message, JSON.stringify(templateError, Object.getOwnPropertyNames(templateError)));
     htmlContent = `<p>Error generating email content. Please contact support. Type: ${emailType}</p>`; // Error content
-    emailSubject = `Important Notification from ${currentPlatformName}`; // More generic subject on error
+    emailSubject = `Important Notification from ${currentPlatformName}`; 
   }
   
   const generatedHtmlSnippet = htmlContent ? htmlContent.substring(0, 200) + "..." : "HTML content is null/empty";
@@ -222,5 +226,4 @@ export async function getEmailTemplateAndSubject(
   };
 }
 
-// Removed the old React-based getEmailTemplateAndSubject function if it was still here.
-// Ensure this file only exports the string-based one.
+    

@@ -1,3 +1,4 @@
+
 // src/types/index.ts
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Timestamp } from "firebase/firestore";
@@ -427,7 +428,7 @@ export interface AuthorizationCode {
 
 export interface EmailServiceDataPayload {
   userName?: string;
-  loginLink?: string;
+  loginUrl?: string;
   resetLink?: string;
   // KYC Specific
   kycSubmissionDate?: string;
@@ -459,6 +460,9 @@ export interface EmailServiceDataPayload {
   // For Admin KYC Notification
   adminReviewUrl?: string;
   userId?: string; // User ID of the person who submitted KYC
+  // Password Changed Notification
+  passwordChangedDate?: string; // Added for password change notification
+  supportEmail?: string; // For use in footers or contact links
 }
 
 export interface EmailServiceResult {
@@ -474,3 +478,4 @@ export interface DeleteUserDialogProps {
   onConfirmDelete: () => void;
 }
 
+    
