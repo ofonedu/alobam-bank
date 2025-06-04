@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldLock } from "lucide-react";
+import { Loader2, Shield } from "lucide-react"; // Changed ShieldLock to Shield
 import { useState, useEffect } from "react";
 import type { OtpVerificationDialogProps } from "@/types";
 import { verifyOtpAction } from "@/lib/actions/otp-actions"; // Import verifyOtpAction
@@ -79,7 +79,7 @@ export function OtpVerificationDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <ShieldLock className="mr-2 h-5 w-5 text-primary" />
+            <Shield className="mr-2 h-5 w-5 text-primary" /> {/* Changed ShieldLock to Shield */}
             OTP Verification
           </DialogTitle>
           <DialogDescription>
