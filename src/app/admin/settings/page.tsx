@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail, Percent, Image as ImageIcon } from "lucide-react";
+import { Save, Loader2, AlertTriangle, ListPlus, ShieldCheck, KeyRound, FileUp, LayoutTemplate, Shapes, DraftingCompass, Mail, Percent, Image as ImageIcon, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getPlatformSettingsAction, updatePlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
 import type { PlatformSettings } from "@/types";
@@ -37,6 +37,7 @@ export default function AdminSettingsPage() {
       requireCOTConfirmation: false,
       requireIMFAuthorization: false,
       requireTaxClearance: false,
+      enableOtpForTransfers: false, // Default for new OTP setting
       platformLogoText: "Wohana Funds",
       platformLogoIcon: "ShieldCheck",
       emailLogoImageUrl: "/images/default-email-logo.png", // Default placeholder
@@ -67,6 +68,7 @@ export default function AdminSettingsPage() {
           requireCOTConfirmation: result.settings.requireCOTConfirmation || false,
           requireIMFAuthorization: result.settings.requireIMFAuthorization || false,
           requireTaxClearance: result.settings.requireTaxClearance || false,
+          enableOtpForTransfers: result.settings.enableOtpForTransfers || false, // Load OTP setting
           platformLogoText: result.settings.platformLogoText || "Wohana Funds",
           platformLogoIcon: result.settings.platformLogoIcon || "ShieldCheck",
           emailLogoImageUrl: result.settings.emailLogoImageUrl || "/images/default-email-logo.png",
@@ -95,8 +97,10 @@ export default function AdminSettingsPage() {
     const result = await updatePlatformSettingsAction(data);
     if (result.success) {
       toast({ title: "Success", description: `${section} settings saved.` });
-      if (section === "General & Platform" || section === "Transfer Authorization" || section === "Email (Resend)") {
-        window.location.reload();
+      if (section.includes("General") || section.includes("Transfer") || section.includes("Email")) {
+        // A full reload might be too disruptive for minor changes.
+        // Consider more targeted revalidation or state updates if possible.
+        // window.location.reload(); 
       }
     } else {
       toast({ title: "Error", description: result.message || `Failed to save ${section.toLowerCase()} settings.`, variant: "destructive" });
@@ -104,7 +108,7 @@ export default function AdminSettingsPage() {
     savingSetter(false);
   };
 
-  const onGeneralSubmit = (data: GeneralSettingsFormData) => handleSave(data, setIsSavingGeneral, "General, Transfer & Email");
+  const onGeneralSubmit = (data: GeneralSettingsFormData) => handleSave(data, setIsSavingGeneral, "General, Transfer, OTP & Email");
   const onKycSubmit = (data: KycSettingsFormData) => handleSave(data, setIsSavingKyc, "KYC");
   const onLoanSubmit = (data: LoanSettingsFormData) => handleSave(data, setIsSavingLoan, "Loan");
 
@@ -303,6 +307,19 @@ export default function AdminSettingsPage() {
                         </FormItem>
                         )}
                     />
+                    <FormField
+                        control={generalForm.control}
+                        name="enableOtpForTransfers"
+                        render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm col-span-1">
+                            <div className="space-y-0.5">
+                            <Label htmlFor="enableOtpForTransfers" className="flex items-center gap-1 text-base"><Lock className="h-4 w-4 text-muted-foreground"/>Enable OTP for Transfers</Label>
+                             <FormDescription className="text-xs">If enabled, users must enter an OTP for transfers.</FormDescription>
+                            </div>
+                            <FormControl><Switch id="enableOtpForTransfers" checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                        </FormItem>
+                        )}
+                    />
                 </div>
             </CardContent>
           </Card>
@@ -341,7 +358,7 @@ export default function AdminSettingsPage() {
              <CardContent>
                 <Button type="submit" disabled={isSavingGeneral}>
                     {isSavingGeneral ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save General, Transfer & Email Settings
+                    Save General, Transfer, OTP & Email Settings
                 </Button>
             </CardContent>
           </Card>

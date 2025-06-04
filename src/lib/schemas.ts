@@ -135,10 +135,10 @@ export const GeneralSettingsSchema = z.object({
   requireCOTConfirmation: z.boolean().optional(),
   requireIMFAuthorization: z.boolean().optional(),
   requireTaxClearance: z.boolean().optional(),
+  enableOtpForTransfers: z.boolean().optional(), // New OTP setting
   platformLogoText: z.string().min(1, "Logo text cannot be empty if provided.").max(30, "Logo text too long.").optional().or(z.literal('')),
   platformLogoIcon: z.string().min(1, "Icon name cannot be empty if provided.").max(50, "Icon name too long.").optional().or(z.literal('')),
   emailLogoImageUrl: z.string().url("Invalid URL for email logo image.").or(z.string().startsWith("/", { message: "Local image URL must start with /" })).optional().or(z.literal('')),
-  // Resend specific settings
   resendApiKey: z.string().min(1, "Resend API Key is required if Resend is enabled.").optional().or(z.literal('')),
   resendFromEmail: z.string().email("Invalid 'From' email address for Resend.").optional().or(z.literal('')),
 });

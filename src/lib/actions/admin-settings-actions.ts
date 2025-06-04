@@ -108,7 +108,6 @@ export async function getPlatformSettingsAction(): Promise<PlatformSettingsResul
         if (docSnap.exists()) {
             return { success: true, settings: docSnap.data() as PlatformSettings };
         }
-        // If no settings document exists, return default (empty) settings
         const defaultSettings: PlatformSettings = {
             platformName: "Wohana Funds", 
             supportEmail: "support@example.com", 
@@ -117,6 +116,7 @@ export async function getPlatformSettingsAction(): Promise<PlatformSettingsResul
             requireCOTConfirmation: false,
             requireIMFAuthorization: false,
             requireTaxClearance: false,
+            enableOtpForTransfers: false, // Default for new OTP setting
             platformLogoText: "Wohana Funds",
             platformLogoIcon: "ShieldCheck",
             resendApiKey: "",

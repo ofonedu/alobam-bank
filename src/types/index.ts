@@ -164,11 +164,22 @@ export interface PlatformSettings {
   requireCOTConfirmation?: boolean;
   requireIMFAuthorization?: boolean;
   requireTaxClearance?: boolean;
+  enableOtpForTransfers?: boolean; // New OTP setting
   platformLogoText?: string;
   platformLogoIcon?: string;
   emailLogoImageUrl?: string;
   resendApiKey?: string;
   resendFromEmail?: string;
+}
+
+export interface OtpRecord {
+  id?: string; // Firestore document ID
+  userId: string;
+  otp: string; // Store plain for now, consider hashing in a real app
+  purpose: string; // e.g., "fund_transfer", "password_reset"
+  expiresAt: Timestamp;
+  createdAt: Timestamp;
+  isUsed?: boolean; // Default false
 }
 
 // Landing Page Content Types
@@ -461,8 +472,10 @@ export interface EmailServiceDataPayload {
   adminReviewUrl?: string;
   userId?: string; // User ID of the person who submitted KYC
   // Password Changed Notification
-  passwordChangedDate?: string; // Added for password change notification
+  passwordChangedDate?: string;
   supportEmail?: string; // For use in footers or contact links
+  // OTP Email
+  otp?: string;
 }
 
 export interface EmailServiceResult {
@@ -477,5 +490,3 @@ export interface DeleteUserDialogProps {
   user: AdminUserView | null;
   onConfirmDelete: () => void;
 }
-
-    

@@ -19,6 +19,7 @@ interface EmailTemplateProps {
   transactionAmount?: string; // Formatted amount with currency
   transactionType?: string;
   transactionDate?: string;
+  transactionTime?: string;
   transactionId?: string;
   transactionDescription?: string;
   recipientName?: string;
@@ -26,6 +27,8 @@ interface EmailTemplateProps {
   // Password Changed Specific
   passwordChangedDate?: string;
   supportEmail?: string;
+  // OTP Specific
+  otp?: string;
 }
 
 // Common styles
@@ -40,6 +43,7 @@ const buttonStyle = "display: inline-block; padding: 12px 25px; background-color
 const footerStyle = "text-align: center; padding-top: 25px; border-top: 1px solid #e0e0e0; margin-top: 25px; font-size: 12px; color: #888888;";
 const footerLinkStyle = "color: #0056b3; text-decoration: underline;";
 const capitalizeStyle = "text-transform: capitalize;";
+const otpCodeStyle = "font-size: 24px; font-weight: bold; color: #002147; letter-spacing: 2px; margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 5px; display: inline-block;";
 
 
 function getLogoDisplay(bankName: string = "Wohana Funds", emailLogoImageUrl?: string): string {
@@ -429,4 +433,43 @@ export function passwordChangedEmailTemplate({
   `;
 }
 
-    
+export function otpEmailTemplate({
+  fullName = "Valued Customer",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  otp,
+  supportEmail,
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName, supportEmail);
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your One-Time Password (OTP) - ${bankName}</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#002147;">One-Time Password (OTP) Verification</p>
+      <p style="${pStyle}">Dear <span style="${capitalizeStyle}">${fullName}</span>,</p>
+      <p style="${pStyle}">Your One-Time Password (OTP) for completing your transaction/action with <strong style="${strongStyle}">${bankName}</strong> is:</p>
+      <div style="text-align:center; margin: 20px 0;">
+        <span style="${otpCodeStyle}">${otp || "N/A"}</span>
+      </div>
+      <p style="${pStyle}">This OTP is valid for a short period (typically 5-10 minutes). Please do not share this code with anyone.</p>
+      <p style="${pStyle}">If you did not request this OTP, please contact our support team immediately at <a href="mailto:${supportEmail || 'support@example.com'}" style="${footerLinkStyle}">${supportEmail || 'support@example.com'}</a>.</p>
+      <p style="${pStyle}">Best regards,<br>The ${bankName} Team</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
