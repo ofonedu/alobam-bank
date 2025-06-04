@@ -1,6 +1,7 @@
 
 import type { Metadata, Viewport } from 'next';
 import { Montserrat, Open_Sans } from 'next/font/google'; // Changed import
+import Script from 'next/script'; // Import the Script component
 import './globals.css';
 import { AuthProvider } from '@/hooks/use-auth';
 import { Toaster } from "@/components/ui/toaster";
@@ -45,9 +46,28 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${montserrat.variable} ${openSans.variable}`}>
-      {/* Ensure PWA compatibility - manifest link is now in metadata */}
-      {/* suppressHydrationWarning is often recommended with next-themes */}
-      <head />
+      <head>
+        {/* Smartsupp Live Chat script */}
+        <script
+          id="smartsupp-script"
+          type="text/javascript"
+          dangerouslySetInnerHTML={{
+            __html: `
+              var _smartsupp = _smartsupp || {};
+              _smartsupp.key = '8c6a2d88db2328f4a77571f3613dbc2f4e5c008c';
+              window.smartsupp||(function(d) {
+                var s,c,o=smartsupp=function(){ o._.push(arguments)};o._=[];
+                s=d.getElementsByTagName('script')[0];c=d.createElement('script');
+                c.type='text/javascript';c.charset='utf-8';c.async=true;
+                c.src='https://www.smartsuppchat.com/loader.js?';s.parentNode.insertBefore(c,s);
+              })(document);
+            `,
+          }}
+        />
+        <noscript>
+          Powered by <a href="https://www.smartsupp.com" target="_blank" rel="noopener noreferrer">Smartsupp</a>
+        </noscript>
+      </head>
       <body className={`antialiased`}>
         <ThemeProvider
             attribute="class"
@@ -64,4 +84,3 @@ export default function RootLayout({
     </html>
   );
 }
-
