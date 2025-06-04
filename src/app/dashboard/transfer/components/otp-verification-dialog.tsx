@@ -15,22 +15,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ShieldLock } from "lucide-react";
 import { useState, useEffect } from "react";
-
-interface OtpVerificationDialogProps {
-  isOpen: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (otp: string) => Promise<void>; // Make onConfirm async
-  onCancel: () => void;
-  emailHint?: string; // e.g., "ema***@example.com"
-}
+import type { OtpVerificationDialogProps } from "@/types";
+import { verifyOtpAction } from "@/lib/actions/otp-actions"; // Import verifyOtpAction
+import { useToast } from "@/hooks/use-toast";
 
 export function OtpVerificationDialog({
   isOpen,
   onOpenChange,
-  onConfirm,
-  onCancel,
+  userId,
+  purpose,
   emailHint,
+  onOtpVerifiedSuccessfully,
+  onCancel,
 }: OtpVerificationDialogProps) {
+  const { toast } = useToast();
   const [otp, setOtp] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +37,7 @@ export function OtpVerificationDialog({
     if (isOpen) {
       setOtp("");
       setError(null);
-      setIsConfirming(false);
+      setIsConfirming(false); // Reset confirming state when dialog opens
     }
   }, [isOpen]);
 
@@ -50,18 +48,34 @@ export function OtpVerificationDialog({
     }
     setError(null);
     setIsConfirming(true);
-    await onConfirm(otp.trim()); // Await the confirmation
-    // setIsConfirming will be reset by parent or if an error occurs in onConfirm
-    // or parent can close dialog on success
+
+    try {
+      const result = await verifyOtpAction(userId, purpose, otp.trim());
+      if (result.success) {
+        toast({ title: "OTP Verified", description: result.message });
+        onOtpVerifiedSuccessfully(otp.trim()); // Call the success callback
+        onOpenChange(false); // Close the dialog on success
+      } else {
+        setError(result.message || "OTP verification failed.");
+        toast({ title: "OTP Verification Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (e: any) {
+      setError("An unexpected error occurred during OTP verification.");
+      toast({ title: "Error", description: "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open && !isConfirming) {
+      onCancel(); // Call onCancel if dialog is closed by user interaction (not programmatically after success)
+    }
+    onOpenChange(open);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!isConfirming) { // Prevent closing while confirming
-        onOpenChange(open);
-        if (!open) onCancel(); // Call cancel if dialog is closed by user
-      }
-    }}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center">
@@ -85,11 +99,12 @@ export function OtpVerificationDialog({
               maxLength={6}
               disabled={isConfirming}
               className="text-center tracking-[0.3em] text-lg font-mono"
+              autoComplete="one-time-code"
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <p className="text-xs text-muted-foreground">
-            The OTP is valid for 10 minutes. If you didn't receive it, please check your spam folder or try resending (resend functionality not yet implemented).
+            The OTP is valid for 10 minutes. If you didn't receive it, please check your spam folder or try initiating the transfer again to resend.
           </p>
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
@@ -105,3 +120,4 @@ export function OtpVerificationDialog({
     </Dialog>
   );
 }
+    

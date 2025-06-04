@@ -1,9 +1,10 @@
+
 // src/lib/actions.ts
 "use server";
 
 import { auth, db, storage } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData, ForgotPasswordSchema } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, AuthorizationDetails, ClientKYCData, KYCSubmissionResult } from "@/types";
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, TransferAuthorizations, ClientKYCData, KYCSubmissionResult } from "@/types"; // Updated AuthorizationDetails to TransferAuthorizations
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
@@ -140,7 +141,7 @@ export async function submitKycAction(
     // Send KYC Submitted Notification to Admin
     if (adminEmail) {
       const adminEmailPayload = {
-        fullName, // User's full name
+        fullName, 
         userId,
         bankName: platformName,
         emailLogoImageUrl: emailLogoUrl,
@@ -240,7 +241,7 @@ interface RecordTransferResult {
 export async function recordTransferAction(
   userId: string,
   transferData: LocalTransferData | InternationalTransferData,
-  authorizations: Partial<AuthorizationDetails>,
+  authorizations: TransferAuthorizations, // Updated to use TransferAuthorizations
   platformCotPercentage?: number
 ): Promise<RecordTransferResult> {
   if (!userId) {
@@ -268,6 +269,11 @@ export async function recordTransferAction(
     const totalDeduction = transferData.amount + cotAmount;
     const transactionCurrency = 'currency' in transferData && transferData.currency ? transferData.currency : userProfile.primaryCurrency || "USD";
 
+    // OTP verification is now handled before calling this action if enabled.
+    // The presence of authorizations.otpVerified (or otpCode) signifies completion.
+    if (settingsResult.settings?.enableOtpForTransfers && !authorizations.otpVerified) {
+        return { success: false, message: "OTP verification is required for this transfer but was not completed." };
+    }
 
     let cotCodeId: string | undefined;
     let imfCodeId: string | undefined;
@@ -305,8 +311,6 @@ export async function recordTransferAction(
       const currentBalance = userProfileData.balance || 0; 
 
       if (userProfileData.primaryCurrency !== transactionCurrency && !('currency' in transferData) ) {
-        // This case is unlikely if `transactionCurrency` defaults to `userProfile.primaryCurrency`
-        // but good for safety.
         console.warn(`Transfer currency for local transfer should match user's primary currency. Defaulting to user's primary: ${userProfileData.primaryCurrency}.`);
       }
 
@@ -333,24 +337,27 @@ export async function recordTransferAction(
         recipientDetails.country = transferData.country;
       }
 
-      const authDetailsToSave: Partial<AuthorizationDetails> = {
+      const authDetailsToSave: TransferAuthorizations = { // Ensure all fields are potentially present
         cot: parseFloat(cotAmount.toFixed(2)),
       };
       if (authorizations.cotCode) authDetailsToSave.cotCode = authorizations.cotCode;
       if (authorizations.imfCode) authDetailsToSave.imfCode = authorizations.imfCode;
       if (authorizations.taxCode) authDetailsToSave.taxCode = authorizations.taxCode;
+      if (authorizations.otpCode) authDetailsToSave.otpCode = authorizations.otpCode; // Save OTP if provided
+      if (authorizations.otpVerified) authDetailsToSave.otpVerified = true;
+
 
       const transactionsColRef = collection(db, "transactions");
       const newTransactionData: Omit<TransactionType, "id" | "date"> & { date: Timestamp } = {
         userId,
         date: Timestamp.now(),
         description: `Transfer to ${transferData.recipientName}`,
-        amount: -transferData.amount, // Store the actual transfer amount as negative
+        amount: -transferData.amount, 
         type: "transfer",
         status: "completed",
         currency: transactionCurrency,
         ...(Object.keys(recipientDetails).length > 0 && { recipientDetails: recipientDetails as TransactionType['recipientDetails'] }),
-        ...(Object.keys(authDetailsToSave).length > 1 && { authorizationDetails: authDetailsToSave as AuthorizationDetails }),
+        ...(Object.keys(authDetailsToSave).length > 0 && { authorizationDetails: authDetailsToSave }), // Save all relevant auth details
       };
       const transactionDocRef = doc(collection(db, "transactions"));
       transaction.set(transactionDocRef, newTransactionData);
@@ -360,7 +367,7 @@ export async function recordTransferAction(
             userId,
             date: Timestamp.now(),
             description: `Cost of Transfer (COT) for transaction to ${transferData.recipientName}`,
-            amount: -cotAmount, // COT is a deduction
+            amount: -cotAmount, 
             type: "fee",
             status: "completed",
             currency: transactionCurrency,
@@ -374,8 +381,8 @@ export async function recordTransferAction(
       if (cotCodeId) await markCodeAsUsed(cotCodeId, firestoreBatchForCodesInsideTx);
       if (imfCodeId) await markCodeAsUsed(imfCodeId, firestoreBatchForCodesInsideTx);
       if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodesInsideTx);
-      // The batch inside runTransaction will be committed as part of the transaction
-
+      // OTP is marked as used in verifyOtpAction
+      
       return { 
         transactionId: transactionDocRef.id, 
         newBalance: updatedBalance, 
@@ -392,7 +399,6 @@ export async function recordTransferAction(
     if (taxCodeId) await markCodeAsUsed(taxCodeId, firestoreBatchForCodes);
     await firestoreBatchForCodes.commit().catch(err => console.error("Error committing code usage batch:", err));
     
-    // Send Debit Notification Email to Sender
     if (userProfile.email) {
       const emailPayload = {
         fullName: transactionResult.userFullName,
@@ -708,8 +714,8 @@ export async function requestPasswordResetAction(email: string): Promise<Request
     return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
   } catch (error: any) {
     console.error("Error sending password reset email:", error);
-    // Don't reveal if email exists or not for security reasons
     return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
   }
 }
 
+    

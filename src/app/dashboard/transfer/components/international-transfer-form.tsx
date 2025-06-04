@@ -23,10 +23,12 @@ import { Loader2, Globe } from "lucide-react";
 import { COTConfirmationDialog } from "./cot-confirmation-dialog";
 import { IMFAuthorizationDialog } from "./imf-authorization-dialog";
 import { TaxClearanceDialog } from "./tax-clearance-dialog";
+import { OtpVerificationDialog } from "./otp-verification-dialog"; // Import OTP dialog
 import { useAuth } from "@/hooks/use-auth";
 import { recordTransferAction } from "@/lib/actions";
 import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
-import type { PlatformSettings } from "@/types";
+import { generateAndSendOtpAction } from "@/lib/actions/otp-actions"; // Import OTP generation
+import type { PlatformSettings, TransferAuthorizations } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 
@@ -36,8 +38,9 @@ export function InternationalTransferForm() {
   const [isSubmittingInitialForm, setIsSubmittingInitialForm] = useState(false);
 
   const [currentTransferData, setCurrentTransferData] = useState<InternationalTransferData | null>(null);
-  const [collectedAuthCodes, setCollectedAuthCodes] = useState<{cotCode?: string; imfCode?: string; taxCode?: string}>({});
+  const [currentAuthorizations, setCurrentAuthorizations] = useState<TransferAuthorizations>({});
 
+  const [showOTPDialog, setShowOTPDialog] = useState(false);
   const [showCOTDialog, setShowCOTDialog] = useState(false);
   const [showIMFDialog, setShowIMFDialog] = useState(false);
   const [showTaxDialog, setShowTaxDialog] = useState(false);
@@ -56,7 +59,8 @@ export function InternationalTransferForm() {
             requireCOTConfirmation: false, 
             requireIMFAuthorization: false, 
             requireTaxClearance: false,
-            cotPercentage: 0.01, 
+            cotPercentage: 0.01,
+            enableOtpForTransfers: false,
         });
         console.error("Failed to load platform settings for transfer form:", result.error);
         toast({
@@ -87,7 +91,8 @@ export function InternationalTransferForm() {
 
   const resetTransferFlow = () => {
     setCurrentTransferData(null);
-    setCollectedAuthCodes({});
+    setCurrentAuthorizations({});
+    setShowOTPDialog(false);
     setShowCOTDialog(false);
     setShowIMFDialog(false);
     setShowTaxDialog(false);
@@ -95,17 +100,30 @@ export function InternationalTransferForm() {
     setIsSubmittingInitialForm(false);
   };
 
-  const decideAndExecuteNextStep = (
+  const decideAndExecuteNextStep = async (
     dataForTransfer: InternationalTransferData,
-    authsSoFar: typeof collectedAuthCodes
+    authsSoFar: TransferAuthorizations
   ) => {
     setIsSubmittingInitialForm(false); 
-    if (!platformSettings) {
-      toast({ title: "Error", description: "Platform settings not loaded. Cannot proceed.", variant: "destructive" });
+    if (!platformSettings || !user || !userProfile?.email) {
+      toast({ title: "Error", description: "Platform settings or user details not loaded. Cannot proceed.", variant: "destructive" });
       resetTransferFlow();
       return;
     }
     
+    if (platformSettings.enableOtpForTransfers && !authsSoFar.otpVerified) {
+      setCurrentTransferData(dataForTransfer);
+      setIsSubmittingInitialForm(true);
+      const otpResult = await generateAndSendOtpAction(user.uid, "international_transfer", userProfile.email, userProfile.displayName || user.displayName || undefined);
+      setIsSubmittingInitialForm(false);
+      if (otpResult.success) {
+        setShowOTPDialog(true);
+      } else {
+        toast({ title: "OTP Error", description: otpResult.message || "Failed to send OTP.", variant: "destructive" });
+        resetTransferFlow();
+      }
+      return;
+    }
     if (platformSettings.requireCOTConfirmation && !authsSoFar.cotCode) {
       setCurrentTransferData(dataForTransfer);
       setShowCOTDialog(true);
@@ -136,13 +154,13 @@ export function InternationalTransferForm() {
     }
     setIsSubmittingInitialForm(true);
     setCurrentTransferData(values);
+    setCurrentAuthorizations({});
 
     const cotPercentage = platformSettings.cotPercentage || 0.01;
     const cotAmount = values.amount * cotPercentage;
     const totalDeduction = values.amount + cotAmount;
     const transactionCurrency = values.currency || "USD";
 
-    // Assuming main balance is in user's primary currency
     if (userProfile.balance < totalDeduction && userProfile.primaryCurrency === transactionCurrency) {
       toast({
         title: "Insufficient Funds",
@@ -154,18 +172,28 @@ export function InternationalTransferForm() {
     }
      if (userProfile.primaryCurrency !== transactionCurrency) {
         console.warn("Currency mismatch: User's primary currency is different from transfer currency. This flow assumes a single balance field. Currency conversion logic may be needed.");
-         // Potentially block or warn more strongly if multi-currency isn't supported for balance holding
     }
 
+    await decideAndExecuteNextStep(values, {});
+  };
 
-    decideAndExecuteNextStep(values, {});
+  const handleOtpVerified = (otp: string) => {
+    setShowOTPDialog(false);
+    if(currentTransferData) {
+      const updatedAuths = { ...currentAuthorizations, otpCode: otp, otpVerified: true };
+      setCurrentAuthorizations(updatedAuths);
+      decideAndExecuteNextStep(currentTransferData, updatedAuths);
+    } else {
+       toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
+       resetTransferFlow();
+    }
   };
 
   const handleCOTEConfirmed = (cotCode: string) => {
     setShowCOTDialog(false);
     if(currentTransferData) {
-      const updatedAuths = { ...collectedAuthCodes, cotCode };
-      setCollectedAuthCodes(updatedAuths);
+      const updatedAuths = { ...currentAuthorizations, cotCode };
+      setCurrentAuthorizations(updatedAuths);
       decideAndExecuteNextStep(currentTransferData, updatedAuths);
     } else {
        toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
@@ -176,8 +204,8 @@ export function InternationalTransferForm() {
   const handleIMFAuthorized = (imfCode: string) => {
     setShowIMFDialog(false);
     if(currentTransferData) {
-      const updatedAuths = { ...collectedAuthCodes, imfCode };
-      setCollectedAuthCodes(updatedAuths);
+      const updatedAuths = { ...currentAuthorizations, imfCode };
+      setCurrentAuthorizations(updatedAuths);
       decideAndExecuteNextStep(currentTransferData, updatedAuths);
     } else {
        toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
@@ -188,8 +216,8 @@ export function InternationalTransferForm() {
   const handleTaxCodeEntered = async (taxCode: string) => {
     setShowTaxDialog(false);
     if(currentTransferData) {
-      const updatedAuths = { ...collectedAuthCodes, taxCode };
-      setCollectedAuthCodes(updatedAuths);
+      const updatedAuths = { ...currentAuthorizations, taxCode };
+      setCurrentAuthorizations(updatedAuths);
       decideAndExecuteNextStep(currentTransferData, updatedAuths);
     } else {
        toast({ title: "Error", description: "Transfer details lost. Please start over.", variant: "destructive" });
@@ -199,7 +227,7 @@ export function InternationalTransferForm() {
 
   const finalizeTransfer = async (
     dataToFinalize: InternationalTransferData,
-    authCodesToFinalize: typeof collectedAuthCodes
+    authCodesToFinalize: TransferAuthorizations
   ) => {
      if (!user || !userProfile) {
       toast({ title: "Error", description: "User session lost. Please log in and try again.", variant: "destructive" });
@@ -246,7 +274,9 @@ export function InternationalTransferForm() {
     );
   }
   
-  const anyDialogOpen = showCOTDialog || showIMFDialog || showTaxDialog;
+  const anyDialogOpen = showCOTDialog || showIMFDialog || showTaxDialog || showOTPDialog;
+  const userEmailForHint = userProfile?.email ? `${userProfile.email.substring(0, 3)}***${userProfile.email.substring(userProfile.email.lastIndexOf("@"))}` : "your registered email";
+
 
   return (
     <>
@@ -311,7 +341,6 @@ export function InternationalTransferForm() {
               <FormItem>
                 <FormLabel>Recipient's Country</FormLabel>
                 <FormControl>
-                  {/* TODO: Replace with a Select component for better UX */}
                   <Input placeholder="e.g., United States" {...field} disabled={isSubmittingInitialForm || anyDialogOpen} />
                 </FormControl>
                 <FormMessage />
@@ -375,7 +404,7 @@ export function InternationalTransferForm() {
             )}
           />
           <Button type="submit" disabled={isSubmittingInitialForm || anyDialogOpen || isLoadingSettings} className="w-full sm:w-auto">
-            {isSubmittingInitialForm && !anyDialogOpen ? (
+            {(isSubmittingInitialForm && !anyDialogOpen) ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
                 <Globe className="mr-2 h-4 w-4" />
@@ -385,8 +414,20 @@ export function InternationalTransferForm() {
         </form>
       </Form>
 
-      {currentTransferData && platformSettings && (
+      {user && currentTransferData && platformSettings && (
         <>
+          <OtpVerificationDialog
+            isOpen={showOTPDialog}
+            onOpenChange={(open) => {
+                if (!open) { handleDialogCancel(); }
+                setShowOTPDialog(open);
+            }}
+            userId={user.uid}
+            purpose="international_transfer"
+            emailHint={userEmailForHint}
+            onOtpVerifiedSuccessfully={handleOtpVerified}
+            onCancel={handleDialogCancel}
+          />
           <COTConfirmationDialog
             isOpen={showCOTDialog}
             onOpenChange={(open) => {
@@ -421,3 +462,4 @@ export function InternationalTransferForm() {
     </>
   );
 }
+    

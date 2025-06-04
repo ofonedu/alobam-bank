@@ -34,6 +34,12 @@ export interface AuthorizationDetails {
   taxCode?: string;
 }
 
+export interface TransferAuthorizations extends AuthorizationDetails {
+  otpCode?: string; // OTP code itself, or a flag indicating verification
+  otpVerified?: boolean; // Explicit flag if OTP was verified
+}
+
+
 export interface Transaction {
   id: string;
   userId: string;
@@ -50,7 +56,7 @@ export interface Transaction {
     swiftBic?: string;
     country?: string;
   };
-  authorizationDetails?: AuthorizationDetails;
+  authorizationDetails?: TransferAuthorizations; // Updated to use TransferAuthorizations
   relatedTransferId?: string;
   isFlagged?: boolean;
   notes?: string;
@@ -164,7 +170,7 @@ export interface PlatformSettings {
   requireCOTConfirmation?: boolean;
   requireIMFAuthorization?: boolean;
   requireTaxClearance?: boolean;
-  enableOtpForTransfers?: boolean; // New OTP setting
+  enableOtpForTransfers?: boolean;
   platformLogoText?: string;
   platformLogoIcon?: string;
   emailLogoImageUrl?: string;
@@ -173,13 +179,14 @@ export interface PlatformSettings {
 }
 
 export interface OtpRecord {
-  id?: string; // Firestore document ID
+  id?: string;
   userId: string;
-  otp: string; // Store plain for now, consider hashing in a real app
-  purpose: string; // e.g., "fund_transfer", "password_reset"
+  otp: string;
+  purpose: string;
   expiresAt: Timestamp;
   createdAt: Timestamp;
-  isUsed?: boolean; // Default false
+  updatedAt?: Timestamp; // Added to track usage/verification time
+  isUsed?: boolean;
 }
 
 // Landing Page Content Types
@@ -368,6 +375,17 @@ export interface TaxClearanceDialogProps {
   onCancel: () => void;
 }
 
+export interface OtpVerificationDialogProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  userId: string;
+  purpose: string;
+  emailHint?: string;
+  onOtpVerifiedSuccessfully: (otp: string) => void; // Callback on successful OTP verification
+  onCancel: () => void;
+}
+
+
 export interface AdminUserRoleDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
@@ -445,15 +463,15 @@ export interface EmailServiceDataPayload {
   kycSubmissionDate?: string;
   kycRejectionReason?: string;
   // Transfer & Transaction Specific
-  transactionAmount?: string; // Formatted amount with currency
-  transactionType?: string; // e.g., "Fund Transfer", "Admin Credit"
+  transactionAmount?: string; 
+  transactionType?: string; 
   transactionDate?: string;
   transactionTime?: string;
   transactionId?: string;
   transactionDescription?: string;
-  recipientName?: string; // Optional, for transfers
-  currentBalance?: string; // Formatted new balance with currency
-  accountNumber?: string; // Masked account number
+  recipientName?: string; 
+  currentBalance?: string; 
+  accountNumber?: string; 
   transactionLocation?: string;
   transactionValueDate?: string;
   transactionRemarks?: string;
@@ -470,10 +488,10 @@ export interface EmailServiceDataPayload {
   emailLogoImageUrl?: string;
   // For Admin KYC Notification
   adminReviewUrl?: string;
-  userId?: string; // User ID of the person who submitted KYC
+  userId?: string; 
   // Password Changed Notification
   passwordChangedDate?: string;
-  supportEmail?: string; // For use in footers or contact links
+  supportEmail?: string; 
   // OTP Email
   otp?: string;
 }
@@ -490,3 +508,5 @@ export interface DeleteUserDialogProps {
   user: AdminUserView | null;
   onConfirmDelete: () => void;
 }
+
+    
