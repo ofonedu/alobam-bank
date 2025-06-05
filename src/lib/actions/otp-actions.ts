@@ -36,7 +36,7 @@ export async function generateAndSendOtpAction(
   if (!userEmail) {
     return { success: false, message: "User email is required to send OTP." };
   }
-  console.log(`generateAndSendOtpAction: Initiated for userId='${userId}', purpose='${purpose}', email='${userEmail}'`);
+  // console.log(`generateAndSendOtpAction: Initiated for userId='${userId}', purpose='${purpose}', email='${userEmail}'`);
 
   try {
     const otpValue = generateNumericOtp();
@@ -54,7 +54,7 @@ export async function generateAndSendOtpAction(
 
     const otpCollectionRef = collection(db, "otpRecords");
     const docRef = await addDoc(otpCollectionRef, newOtpRecord);
-    console.log(`generateAndSendOtpAction: OTP record stored in Firestore. ID: ${docRef.id}, OTP: ${otpValue} (for debugging only, remove in prod)`);
+    // console.log(`generateAndSendOtpAction: OTP record stored in Firestore. ID: ${docRef.id}, OTP: ${otpValue} (for debugging only, remove in prod)`);
 
     // Send OTP email
     const settingsResult = await getPlatformSettingsAction();
@@ -73,7 +73,7 @@ export async function generateAndSendOtpAction(
     const emailContent = await getEmailTemplateAndSubject("OTP_VERIFICATION", emailPayload);
 
     if (emailContent.html) {
-      console.log(`generateAndSendOtpAction: Sending OTP email to ${userEmail}`);
+      // console.log(`generateAndSendOtpAction: Sending OTP email to ${userEmail}`);
       const emailResult = await sendTransactionalEmail({
         to: userEmail,
         subject: emailContent.subject,
@@ -85,7 +85,7 @@ export async function generateAndSendOtpAction(
         console.error("generateAndSendOtpAction: Failed to send OTP email:", emailResult.error);
         // Decide if this should be a hard failure or just a warning
       } else {
-        console.log("generateAndSendOtpAction: OTP email sent successfully.");
+        // console.log("generateAndSendOtpAction: OTP email sent successfully.");
       }
     } else {
         console.warn("generateAndSendOtpAction: OTP email HTML content was null or empty. OTP email not sent.");
@@ -117,7 +117,7 @@ export async function verifyOtpAction(
   purpose: string,
   otpEntered: string
 ): Promise<VerifyOtpResult> {
-  console.log(`verifyOtpAction: Called for userId='${userId}', purpose='${purpose}', otpEntered='${otpEntered}'`);
+  // console.log(`verifyOtpAction: Called for userId='${userId}', purpose='${purpose}', otpEntered='${otpEntered}'`);
   if (!userId || !purpose || !otpEntered) {
     return { success: false, message: "User ID, purpose, and OTP are required." };
   }
@@ -137,43 +137,70 @@ export async function verifyOtpAction(
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      console.log("verifyOtpAction: No matching, unused OTP found in Firestore for the provided details.");
-      return { success: false, message: "Invalid or expired OTP." };
+      // console.log("verifyOtpAction: No matching, unused OTP found in Firestore for the provided details.");
+      return { success: false, message: "Invalid or expired OTP. Please ensure you've entered the latest code." };
     }
 
     const otpDoc = querySnapshot.docs[0];
-    const otpDataFromStore = otpDoc.data(); 
-    console.log("verifyOtpAction: Raw OTP record found:", JSON.stringify(otpDataFromStore));
+    const otpDataFromStore = otpDoc.data();
+    // console.log("verifyOtpAction: Raw OTP record found:", JSON.stringify(otpDataFromStore));
 
+    let expiresAtMillis: number;
 
-    if (!otpDataFromStore.expiresAt || typeof otpDataFromStore.expiresAt.toMillis !== 'function') {
-        console.error("verifyOtpAction: CRITICAL - expiresAt field is missing or not a valid Firestore Timestamp from OTP record:", otpDataFromStore.expiresAt);
-        return { success: false, message: "OTP record is malformed. Cannot verify expiry. Please contact support." };
+    if (otpDataFromStore.expiresAt && typeof otpDataFromStore.expiresAt.toMillis === 'function') {
+      // It's a Firestore Timestamp object
+      expiresAtMillis = otpDataFromStore.expiresAt.toMillis();
+    } else if (otpDataFromStore.expiresAt && typeof otpDataFromStore.expiresAt === 'object' && 'seconds' in otpDataFromStore.expiresAt && 'nanoseconds' in otpDataFromStore.expiresAt) {
+      // It's a plain object that looks like a Firestore Timestamp (e.g., from JSON serialization/deserialization)
+      // This can happen if data is passed around and loses its Firestore Timestamp type.
+      const plainTimestamp = otpDataFromStore.expiresAt as { seconds: number, nanoseconds: number };
+      expiresAtMillis = (plainTimestamp.seconds * 1000) + (plainTimestamp.nanoseconds / 1000000);
+    } else if (otpDataFromStore.expiresAt && (typeof otpDataFromStore.expiresAt === 'string' || typeof otpDataFromStore.expiresAt === 'number')) {
+      // It might be an ISO string or a number (milliseconds epoch)
+      const parsedDate = new Date(otpDataFromStore.expiresAt);
+      if (!isNaN(parsedDate.getTime())) {
+        expiresAtMillis = parsedDate.getTime();
+      } else {
+        // console.error("verifyOtpAction: CRITICAL - expiresAt field is an unparsable string/number:", otpDataFromStore.expiresAt);
+        return { success: false, message: "OTP record has an invalid expiry time format. Please contact support. (Code: TM_UNP)" };
+      }
+    } else {
+      // console.error("verifyOtpAction: CRITICAL - expiresAt field is missing or not a recognized Timestamp format from OTP record:", otpDataFromStore.expiresAt);
+      return { success: false, message: "OTP record is malformed. Cannot verify expiry. Please contact support. (Code: TM_MAL)" };
     }
-    
-    // Now we can safely cast and use toMillis
-    const otpData = otpDataFromStore as OtpRecord; 
+    // console.log(`verifyOtpAction: Parsed expiresAtMillis: ${expiresAtMillis}, Current time: ${Date.now()}`);
 
-    if (otpData.expiresAt.toMillis() < Date.now()) {
-      console.log("verifyOtpAction: OTP has expired. ExpiresAt:", otpData.expiresAt.toDate().toISOString(), "Now:", new Date(Date.now()).toISOString());
+
+    if (expiresAtMillis < Date.now()) {
+      // console.log("verifyOtpAction: OTP has expired. ExpiresAt (ms):", expiresAtMillis, "Now (ms):", Date.now());
       // Optionally mark as used even if expired to prevent replay if clocks are off
-      // await updateDoc(doc(db, "otpRecords", otpDoc.id), { isUsed: true, updatedAt: serverTimestamp() as Timestamp });
-      return { success: false, message: "OTP has expired." };
+      try {
+        await updateDoc(doc(db, "otpRecords", otpDoc.id), { isUsed: true, updatedAt: serverTimestamp() as Timestamp });
+      } catch (updateError) {
+        console.error("verifyOtpAction: Failed to mark expired OTP as used:", updateError);
+      }
+      return { success: false, message: "OTP has expired. Please request a new one." };
     }
 
     // Mark OTP as used
-    await updateDoc(doc(db, "otpRecords", otpDoc.id), {
-      isUsed: true,
-      updatedAt: serverTimestamp() as Timestamp, 
-    });
-    console.log("verifyOtpAction: OTP verified and marked as used successfully. Record ID:", otpDoc.id);
+    try {
+      await updateDoc(doc(db, "otpRecords", otpDoc.id), {
+        isUsed: true,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+      // console.log("verifyOtpAction: OTP verified and marked as used successfully. Record ID:", otpDoc.id);
+    } catch (updateError: any) {
+      console.error("verifyOtpAction: Failed to mark OTP as used during verification:", updateError);
+      return { success: false, message: "Failed to finalize OTP verification. Please try again. (Code: UPD_FAIL)" , error: updateError.message };
+    }
 
     return { success: true, message: "OTP verified successfully." };
+
   } catch (error: any) {
-    console.error("verifyOtpAction: EXCEPTION during OTP verification:", error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    // console.error("verifyOtpAction: EXCEPTION during OTP verification:", error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return {
       success: false,
-      message: "Failed to verify OTP due to a server error. Please check server logs for details.",
+      message: "Failed to verify OTP due to an unexpected server error. (Code: GEN_EXC)",
       error: error.message,
     };
   }
