@@ -122,6 +122,7 @@ export async function verifyOtpAction(
     return { success: false, message: "User ID, purpose, and OTP are required. (Code: INP_VAL)" };
   }
 
+  let querySnapshot;
   try {
     const otpCollectionRef = collection(db, "otpRecords");
     const q = query(
@@ -133,15 +134,13 @@ export async function verifyOtpAction(
       orderBy("createdAt", "desc"),
       limit(1)
     );
+    querySnapshot = await getDocs(q);
+  } catch (queryError: any) {
+    console.error("verifyOtpAction: Firestore query failed:", queryError.message, queryError.stack);
+    return { success: false, message: "Error querying OTP records. This may be due to missing Firestore indexes. Please check server logs or Firebase console. (Code: DB_QRY_FAIL)", error: queryError.message };
+  }
 
-    let querySnapshot;
-    try {
-      querySnapshot = await getDocs(q);
-    } catch (queryError: any) {
-      console.error("verifyOtpAction: Firestore query failed:", queryError.message, queryError.stack);
-      return { success: false, message: "Error querying OTP records. Please try again. (Code: DB_QRY_FAIL)", error: queryError.message };
-    }
-
+  try {
     if (querySnapshot.empty) {
       console.log("verifyOtpAction: No matching, unused OTP found in Firestore for the provided details.");
       return { success: false, message: "Invalid or expired OTP. Please ensure you've entered the latest code. (Code: OTP_NFD_OR_USED)" };
@@ -154,10 +153,8 @@ export async function verifyOtpAction(
         console.error("verifyOtpAction: CRITICAL - otpDoc.data() returned undefined/null for a non-empty snapshot. Doc ID:", otpDoc.id);
         return { success: false, message: "Error retrieving OTP data. Please try again. (Code: DATA_RTRV_FAIL)", error: "OTP document data is undefined/null" };
     }
-    console.log("verifyOtpAction: Raw OTP record found:", JSON.stringify(otpDataFromStore));
+    // console.log("verifyOtpAction: Raw OTP record found:", JSON.stringify(otpDataFromStore));
 
-
-    // --- Timestamp Validation ---
     let expiresAtMillis: number;
     const firestoreExpiresAt = otpDataFromStore.expiresAt;
 
@@ -168,22 +165,20 @@ export async function verifyOtpAction(
 
     if (firestoreExpiresAt && typeof (firestoreExpiresAt as Timestamp).toMillis === 'function') {
         expiresAtMillis = (firestoreExpiresAt as Timestamp).toMillis();
-        console.log(`verifyOtpAction: 'expiresAt' is a Firestore Timestamp. Millis: ${expiresAtMillis}`);
+        // console.log(`verifyOtpAction: 'expiresAt' is a Firestore Timestamp. Millis: ${expiresAtMillis}`);
     } else {
         console.warn("verifyOtpAction: 'expiresAt' is not a direct Firestore Timestamp object. Type:", typeof firestoreExpiresAt, ". Attempting to parse from potential plain object or string.");
         try {
             let parsedDate: Date;
             if (typeof firestoreExpiresAt === 'object' && firestoreExpiresAt !== null && 'seconds' in firestoreExpiresAt && 'nanoseconds' in firestoreExpiresAt) {
-                // Plain object resembling Firestore Timestamp
                 parsedDate = new Timestamp((firestoreExpiresAt as any).seconds, (firestoreExpiresAt as any).nanoseconds).toDate();
             } else {
-                // Attempt to parse as string or number
                 parsedDate = new Date(firestoreExpiresAt as string | number);
             }
             
             if (!isNaN(parsedDate.getTime())) {
                 expiresAtMillis = parsedDate.getTime();
-                console.log(`verifyOtpAction: Successfully parsed 'expiresAt' fallback. Millis: ${expiresAtMillis}`);
+                // console.log(`verifyOtpAction: Successfully parsed 'expiresAt' fallback. Millis: ${expiresAtMillis}`);
             } else {
                 console.error("verifyOtpAction: CRITICAL - 'expiresAt' field is an unparsable format after fallback attempts:", firestoreExpiresAt);
                 return { success: false, message: "OTP record has an invalid expiry time format. Please contact support. (Code: TM_UNP_FALLBACK)" };
@@ -193,10 +188,9 @@ export async function verifyOtpAction(
              return { success: false, message: "Error processing OTP expiry. Please contact support. (Code: TM_PARSE_ERR)" };
         }
     }
-    // --- End Timestamp Validation ---
 
     if (expiresAtMillis < Date.now()) {
-      console.log("verifyOtpAction: OTP has expired. ExpiresAt (ms):", expiresAtMillis, "Now (ms):", Date.now());
+      // console.log("verifyOtpAction: OTP has expired. ExpiresAt (ms):", expiresAtMillis, "Now (ms):", Date.now());
       try {
         await updateDoc(doc(db, "otpRecords", otpDoc.id), { 
           isUsed: true, 
@@ -208,7 +202,6 @@ export async function verifyOtpAction(
       return { success: false, message: "OTP has expired. Please request a new one. (Code: OTP_EXP)" };
     }
 
-    // Mark OTP as used
     try {
       await updateDoc(doc(db, "otpRecords", otpDoc.id), {
         isUsed: true,
@@ -222,13 +215,12 @@ export async function verifyOtpAction(
 
     return { success: true, message: "OTP verified successfully." };
 
-  } catch (error: any) {
-    console.error("verifyOtpAction: EXCEPTION during OTP verification:", error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+  } catch (error: any) { // This is now a more general catch-all for issues after the query
+    console.error("verifyOtpAction: EXCEPTION during OTP verification (after query attempt):", error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return {
       success: false,
-      message: "Failed to verify OTP due to an unexpected server error. (Code: GEN_EXC)",
+      message: "Failed to verify OTP due to an unexpected server error. (Code: GEN_EXC_POST_QUERY)",
       error: error.message,
     };
   }
 }
-
