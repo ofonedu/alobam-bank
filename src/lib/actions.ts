@@ -4,7 +4,7 @@
 
 import { auth, db, storage } from "@/lib/firebase";
 import { KYCFormSchema, type KYCFormData, type LocalTransferData, type InternationalTransferData, EditProfileSchema, type EditProfileFormData, LoanApplicationSchema, type LoanApplicationData, SubmitSupportTicketSchema, type SubmitSupportTicketData, ForgotPasswordSchema } from "@/lib/schemas";
-import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, TransferAuthorizations, ClientKYCData, KYCSubmissionResult } from "@/types"; // Updated AuthorizationDetails to TransferAuthorizations
+import type { KYCData, UserProfile, Transaction as TransactionType, Loan, AdminSupportTicket, UserSupportTicket, TransferAuthorizations, ClientKYCData, KYCSubmissionResult, SupportTicketReply } from "@/types"; // Updated AuthorizationDetails to TransferAuthorizations
 import { doc, setDoc, updateDoc, getDoc, runTransaction, collection, addDoc, Timestamp, query, where, orderBy, limit, getDocs, writeBatch } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { revalidatePath } from "next/cache";
@@ -671,6 +671,7 @@ export async function submitSupportTicketAction(
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
       priority: "medium",
+      replies: [], // Initialize with an empty array
     };
 
     const ticketDocRef = await addDoc(supportTicketsColRef, newTicketData);
@@ -714,7 +715,55 @@ export async function requestPasswordResetAction(email: string): Promise<Request
     return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
   } catch (error: any) {
     console.error("Error sending password reset email:", error);
+    // To avoid leaking information about whether an email exists, always return a generic success message.
     return { success: true, message: "If an account exists for this email, a password reset link has been sent." };
+  }
+}
+
+interface FetchUserSupportTicketsResult {
+  success: boolean;
+  tickets?: UserSupportTicket[];
+  error?: string;
+}
+
+export async function fetchUserSupportTicketsAction(userId: string): Promise<FetchUserSupportTicketsResult> {
+  if (!userId) {
+    return { success: false, error: "User ID is required." };
+  }
+  try {
+    const ticketsCollectionRef = collection(db, "supportTickets");
+    const q = query(
+      ticketsCollectionRef,
+      where("userId", "==", userId),
+      orderBy("updatedAt", "desc")
+    );
+    const querySnapshot = await getDocs(q);
+    const tickets: UserSupportTicket[] = querySnapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      // Ensure replies array exists and is an array, defaulting to empty if not
+      const replies: SupportTicketReply[] = (Array.isArray(data.replies) ? data.replies : []).map(reply => ({
+        ...reply,
+        timestamp: (reply.timestamp as Timestamp)?.toDate ? (reply.timestamp as Timestamp).toDate() : new Date(reply.timestamp)
+      }));
+
+      return {
+        id: docSnap.id,
+        userId: data.userId,
+        userName: data.userName,
+        userEmail: data.userEmail,
+        subject: data.subject,
+        message: data.message,
+        status: data.status,
+        createdAt: (data.createdAt as Timestamp)?.toDate ? (data.createdAt as Timestamp).toDate() : new Date(data.createdAt),
+        updatedAt: (data.updatedAt as Timestamp)?.toDate ? (data.updatedAt as Timestamp).toDate() : new Date(data.updatedAt),
+        priority: data.priority,
+        replies: replies,
+      } as UserSupportTicket;
+    });
+    return { success: true, tickets };
+  } catch (error: any) {
+    console.error("Error fetching user support tickets:", error);
+    return { success: false, error: "Failed to fetch support tickets." };
   }
 }
 

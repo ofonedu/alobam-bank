@@ -144,8 +144,23 @@ export interface AdminSupportTicket {
   updatedAt: Date | Timestamp;
   priority?: "low" | "medium" | "high";
   assignedTo?: string; // Admin ID
-  replies?: SupportTicketReply[];
+  replies: SupportTicketReply[]; // Made non-optional
 }
+
+export interface UserSupportTicket {
+  id: string;
+  userId: string;
+  userName: string; // User's name (can be sender for consistency)
+  userEmail: string; // User's email
+  subject: string;
+  message: string; // Initial message from the user
+  status: "open" | "pending_admin_reply" | "pending_user_reply" | "closed";
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+  priority?: "low" | "medium" | "high"; // Priority set by system/admin
+  replies: SupportTicketReply[]; // Made non-optional
+}
+
 
 export interface AccountType {
   id: string;
@@ -544,3 +559,11 @@ export interface AdminSupportTicketDetailModalProps {
   adminUserId?: string; // Optional adminId if you want to record who replied
   adminName?: string; // Optional adminName
 }
+
+export interface UserSupportTicketDetailModalProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  ticket: UserSupportTicket | null;
+}
+
+    
