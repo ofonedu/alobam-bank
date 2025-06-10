@@ -88,29 +88,8 @@ export default function RootLayout({
         />
         {/* End of Tawk.to Script */}
 
-        {/* Google Translate Widget Script */}
-        <script
-          id="google-translate-init"
-          type="text/javascript"
-          dangerouslySetInnerHTML={{
-            __html: `
-              function googleTranslateElementInit() {
-                new google.translate.TranslateElement({pageLanguage: 'en', layout: google.translate.TranslateElement.InlineLayout.SIMPLE}, 'google_translate_element');
-              }
-            `,
-          }}
-        />
-        <script
-          id="google-translate-api"
-          type="text/javascript"
-          src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-          async
-          defer
-        />
-        {/* End Google Translate Widget Script */}
       </head>
       <body className={`antialiased`}>
-        <div id="google_translate_element" style={{ marginBottom: '10px' }}></div>
         <ThemeProvider
             attribute="class"
             defaultTheme="system"
