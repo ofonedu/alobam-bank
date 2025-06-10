@@ -154,9 +154,9 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold">
               {userProfile ? formatCurrency(userProfile.balance, userProfile.primaryCurrency) : <Skeleton className="h-8 w-24" />}
             </div>
-            <p className="text-xs text-muted-foreground pt-1">
+            <div className="text-xs text-muted-foreground pt-1">
               Account No: {userProfile?.accountNumber || <Skeleton className="h-4 w-20" />}
-            </p>
+            </div>
           </CardContent>
         </Card>
 
