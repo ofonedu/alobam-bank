@@ -48,7 +48,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={`${montserrat.variable} ${openSans.variable}`}>
       <head>
         {/* Smartsupp Live Chat script */}
-        <script
+        {/* <script
           id="smartsupp-script"
           type="text/javascript"
           dangerouslySetInnerHTML={{
@@ -66,7 +66,7 @@ export default function RootLayout({
         />
         <noscript>
           Powered by <a href="https://www.smartsupp.com" target="_blank" rel="noopener noreferrer">Smartsupp</a>
-        </noscript>
+        </noscript> */}
 
         {/* Tawk.to Live Chat script - IMPORTANT: Replace YOUR_TAWK_PROPERTY_ID and YOUR_TAWK_WIDGET_ID */}
         <script
