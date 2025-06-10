@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { LocalTransferSchema, type LocalTransferData } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, ShieldAlert } from "lucide-react";
 import { COTConfirmationDialog } from "./cot-confirmation-dialog";
 import { IMFAuthorizationDialog } from "./imf-authorization-dialog";
 import { TaxClearanceDialog } from "./tax-clearance-dialog";
@@ -32,6 +32,7 @@ import type { PlatformSettings, TransferAuthorizations, ReceiptDetails } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 import { TransactionReceiptModal } from "@/components/transfer/TransactionReceiptModal";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function LocalTransferForm() {
   const { toast } = useToast();
@@ -150,6 +151,14 @@ export function LocalTransferForm() {
       toast({ title: "Error", description: "User not loaded. Please try again.", variant: "destructive" });
       return;
     }
+    if (userProfile.isSuspended) {
+      toast({
+        title: "Account Suspended",
+        description: "Fund transfers are disabled for suspended accounts. Please contact support.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (isLoadingSettings || !platformSettings) {
       toast({ title: "Please wait", description: "Transfer settings are still loading.", variant: "default" });
       return;
@@ -256,7 +265,7 @@ export function LocalTransferForm() {
         remarks: dataToFinalize.remarks,
       });
       setShowReceiptModal(true);
-      form.reset(); // Reset form fields but not the entire flow yet
+      form.reset(); 
     } else {
       toast({
         title: "Transfer Failed",
@@ -265,7 +274,7 @@ export function LocalTransferForm() {
       });
       resetTransferFlow();
     }
-    setIsSubmittingInitialForm(false); // Moved here, as resetTransferFlow also sets it
+    setIsSubmittingInitialForm(false); 
   };
 
   const handleDialogCancel = () => {
@@ -292,6 +301,17 @@ export function LocalTransferForm() {
   const anyDialogOpen = showCOTDialog || showIMFDialog || showTaxDialog || showOTPDialog;
   const userEmailForHint = userProfile?.email ? `${userProfile.email.substring(0, 3)}***${userProfile.email.substring(userProfile.email.lastIndexOf("@"))}` : "your registered email";
 
+  if (userProfile?.isSuspended) {
+    return (
+      <Alert variant="destructive" className="mt-4">
+        <ShieldAlert className="h-4 w-4" />
+        <AlertTitle>Account Suspended</AlertTitle>
+        <AlertDescription>
+          Fund transfers are disabled because your account is suspended. Please contact support for assistance.
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   return (
     <>
@@ -394,7 +414,7 @@ export function LocalTransferForm() {
           <OtpVerificationDialog
             isOpen={showOTPDialog}
             onOpenChange={(open) => {
-                if (!open && !showReceiptModal) { handleDialogCancel(); } // Prevent cancel if receipt is next
+                if (!open && !showReceiptModal) { handleDialogCancel(); } 
                 setShowOTPDialog(open);
             }}
             userId={user.uid}
@@ -438,7 +458,7 @@ export function LocalTransferForm() {
         isOpen={showReceiptModal}
         onOpenChange={(open) => {
             setShowReceiptModal(open);
-            if (!open) { // If receipt modal is closed, fully reset the flow.
+            if (!open) { 
                 resetTransferFlow();
             }
         }}
