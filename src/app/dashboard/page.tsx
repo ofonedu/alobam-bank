@@ -7,13 +7,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, ListChecks, Landmark, UserCircle, ArrowRight, Wallet, TrendingUp, TrendingDown, Activity, AlertTriangle, CheckCircle, Info, Send, ShieldAlert } from "lucide-react";
+import { ShieldCheck, ListChecks, Landmark, UserCircle, ArrowRight, Wallet, TrendingUp, TrendingDown, Activity, AlertTriangle, CheckCircle, Info, Send, ShieldAlert, Camera } from "lucide-react"; // Added Camera
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import type { Transaction } from "@/types";
+import type { Transaction, KYCData } from "@/types"; // Added KYCData
 import { Badge } from "@/components/ui/badge";
 import { useEffect, useState } from "react";
-import { fetchUserTransactionsAction } from "@/lib/actions";
+import { fetchUserTransactionsAction, fetchKycData } from "@/lib/actions"; // Added fetchKycData
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,6 +67,9 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [kycIdPhotoUrl, setKycIdPhotoUrl] = useState<string | null | undefined>(null); // undefined initial, null if not found
+  const [isKycPhotoLoading, setIsKycPhotoLoading] = useState(false);
+
 
   useEffect(() => {
     if (user?.uid) {
@@ -96,12 +99,33 @@ export default function DashboardPage() {
     }
   }, [user, authLoading]);
 
+  useEffect(() => {
+    async function loadKycPhoto() {
+      if (user?.uid && userProfile?.kycStatus === 'verified') {
+        setIsKycPhotoLoading(true);
+        setKycIdPhotoUrl(undefined); // Reset before fetching
+        const kycDataResult = await fetchKycData(user.uid);
+        if (kycDataResult?.photoUrl) {
+          setKycIdPhotoUrl(kycDataResult.photoUrl);
+        } else {
+          setKycIdPhotoUrl(null); // Explicitly null if no photoUrl
+        }
+        setIsKycPhotoLoading(false);
+      } else {
+        setKycIdPhotoUrl(null); // Not verified or no user
+      }
+    }
+    loadKycPhoto();
+  }, [user, userProfile?.kycStatus]);
+
+
   if (authLoading) {
      return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-3/4" />
         <Skeleton className="h-8 w-1/2" />
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
@@ -192,21 +216,6 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-
-        <Card className="shadow-lg hover:shadow-xl transition-shadow">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Account Health</CardTitle>
-            <CheckCircle className="h-5 w-5 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {userProfile?.accountHealthScore !== undefined ? `${userProfile.accountHealthScore}/100` : <Skeleton className="h-8 w-20" />}
-            </div>
-            <p className="text-xs text-muted-foreground pt-1">
-              Overall account standing.
-            </p>
-          </CardContent>
-        </Card>
         
         <Card className="shadow-lg hover:shadow-xl transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -223,6 +232,35 @@ export default function DashboardPage() {
              <p className="text-xs text-muted-foreground pt-1">
               Complete your profile for better experience.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg hover:shadow-xl transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Verified ID</CardTitle>
+            <Camera className="h-5 w-5 text-primary" />
+          </CardHeader>
+          <CardContent>
+            {isKycPhotoLoading ? (
+              <Skeleton className="w-full h-32 rounded-md" />
+            ) : kycIdPhotoUrl && userProfile?.kycStatus === 'verified' ? (
+              <div className="relative aspect-video w-full rounded-md border border-dashed overflow-hidden">
+                <Image 
+                  src={kycIdPhotoUrl} 
+                  alt="Verified ID Photo" 
+                  fill 
+                  className="object-contain"
+                  data-ai-hint="identification document"
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-32 text-center">
+                <Camera className="h-8 w-8 text-muted-foreground mb-2" />
+                <p className="text-xs text-muted-foreground">
+                  {userProfile?.kycStatus === 'verified' ? 'ID photo not available.' : 'Complete KYC to see ID.'}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -347,5 +385,4 @@ export default function DashboardPage() {
     </div>
   );
 }
-
     
