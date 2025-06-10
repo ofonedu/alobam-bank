@@ -207,9 +207,13 @@ export async function getEmailTemplateAndSubject(
         emailSubject = `Password Changed Successfully - ${currentPlatformName}`;
         htmlContent = emailTemplates.passwordChangedEmailTemplate(templatePayload);
         break;
-      case "OTP_VERIFICATION": // New case for OTP
+      case "OTP_VERIFICATION": 
         emailSubject = `Your One-Time Password (OTP) for ${currentPlatformName}`;
         htmlContent = emailTemplates.otpEmailTemplate(templatePayload);
+        break;
+      case "ACCOUNT_SUSPENDED":
+        emailSubject = `Important: Your Account Has Been Suspended - ${currentPlatformName}`;
+        htmlContent = emailTemplates.accountSuspendedEmailTemplate(templatePayload);
         break;
       default:
         console.warn(`getEmailTemplateAndSubject: No specific HTML template defined for email type: ${emailType}. Using basic fallback.`);
@@ -229,3 +233,5 @@ export async function getEmailTemplateAndSubject(
     html: htmlContent,
   };
 }
+
+    

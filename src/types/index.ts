@@ -144,21 +144,21 @@ export interface AdminSupportTicket {
   updatedAt: Date | Timestamp;
   priority?: "low" | "medium" | "high";
   assignedTo?: string; // Admin ID
-  replies: SupportTicketReply[]; // Made non-optional
+  replies: SupportTicketReply[]; 
 }
 
 export interface UserSupportTicket {
   id: string;
   userId: string;
-  userName: string; // User's name (can be sender for consistency)
-  userEmail: string; // User's email
+  userName: string; 
+  userEmail: string; 
   subject: string;
-  message: string; // Initial message from the user
+  message: string; 
   status: "open" | "pending_admin_reply" | "pending_user_reply" | "closed";
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
-  priority?: "low" | "medium" | "high"; // Priority set by system/admin
-  replies: SupportTicketReply[]; // Made non-optional
+  priority?: "low" | "medium" | "high"; 
+  replies: SupportTicketReply[]; 
 }
 
 
@@ -513,6 +513,8 @@ export interface EmailServiceDataPayload {
   supportEmail?: string; 
   // OTP Email
   otp?: string;
+  // Account Suspension
+  suspensionReason?: string; // Added for future use, currently not passed
 }
 
 export interface EmailServiceResult {

@@ -107,36 +107,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const firebaseUser = userCredential.user;
       console.log(`signIn: Firebase sign-in successful for UID: ${firebaseUser.uid}`);
 
+      // Fetch profile immediately after successful Firebase auth
       const userDocRef = doc(db, "users", firebaseUser.uid);
       const userDoc = await getDoc(userDocRef);
-      let tempProfile: UserProfile | null = null;
+      let tempProfile: UserProfile | null = null; // tempProfile for immediate use
+
       if (userDoc.exists()) {
           const profileData = userDoc.data() as Partial<UserProfile>;
           tempProfile = {
               ...profileData,
-              uid: firebaseUser.uid,
+              uid: firebaseUser.uid, // Ensure uid is set from firebaseUser
               balance: typeof profileData.balance === 'number' ? profileData.balance : 0,
               primaryCurrency: profileData.primaryCurrency || "USD",
           } as UserProfile;
-          setUserProfile(tempProfile);
+          setUserProfile(tempProfile); // Update global userProfile state
+      } else {
+          console.warn(`signIn: User profile document not found for UID: ${firebaseUser.uid} immediately after login. This is unexpected for an existing user.`);
+          // If profile doesn't exist for some reason, we might still allow login,
+          // but features relying on userProfile might not work.
+          // Or, one could throw an error here if a profile is strictly required.
       }
 
-      if (tempProfile?.isSuspended) {
-          await firebaseSignOut(auth);
-          setUser(null);
-          setUserProfile(null);
-          setLoading(false);
-          console.warn(`signIn: User ${data.email} (UID: ${firebaseUser.uid}) is suspended. Denying login.`);
-          throw { code: 'auth/user-disabled', message: 'Your account has been suspended. Please contact support.' };
-      }
+      // No longer blocking login for suspended accounts here
+      // if (tempProfile?.isSuspended) {
+      //     await firebaseSignOut(auth);
+      //     setUser(null);
+      //     setUserProfile(null);
+      //     setLoading(false);
+      //     console.warn(`signIn: User ${data.email} (UID: ${firebaseUser.uid}) is suspended. Denying login.`);
+      //     throw { code: 'auth/user-disabled', message: 'Your account has been suspended. Please contact support.' };
+      // }
 
-      setUser(firebaseUser as AuthUser);
+      setUser(firebaseUser as AuthUser); // Update global user state
       setLoading(false);
       return firebaseUser as AuthUser;
     } catch (error: any) {
       setLoading(false);
       console.error(`signIn: Error during Firebase sign-in for ${data.email}:`, error.code, error.message);
-      throw error;
+      throw error; // Re-throw to be caught by the calling component
     }
   };
 

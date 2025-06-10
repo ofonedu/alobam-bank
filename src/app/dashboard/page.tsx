@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, ListChecks, Landmark, UserCircle, ArrowRight, Wallet, TrendingUp, TrendingDown, Activity, AlertTriangle, CheckCircle, Info, Send } from "lucide-react";
+import { ShieldCheck, ListChecks, Landmark, UserCircle, ArrowRight, Wallet, TrendingUp, TrendingDown, Activity, AlertTriangle, CheckCircle, Info, Send, ShieldAlert } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { Transaction } from "@/types";
@@ -131,7 +131,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {userProfile?.isFlagged && (
+      {userProfile?.isSuspended && (
+        <Alert variant="destructive" className="shadow-lg">
+          <ShieldAlert className="h-5 w-5" />
+          <AlertTitle>Account Suspended</AlertTitle>
+          <AlertDescription>
+            Your account is currently suspended. Access to some features may be limited. 
+            Please contact support for more information or to resolve this issue.
+          </AlertDescription>
+        </Alert>
+      )}
+      {userProfile?.isFlagged && !userProfile?.isSuspended && ( // Ensure this only shows if not also suspended
         <Alert variant="destructive" className="shadow-lg">
           <AlertTriangle className="h-5 w-5" />
           <AlertTitle>Account Flagged</AlertTitle>
@@ -337,3 +347,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+    

@@ -496,6 +496,53 @@ export async function updateUserSuspensionStatusAction(
     const userDocRef = doc(db, "users", userId);
     await updateDoc(userDocRef, { isSuspended: newSuspensionStatus });
 
+    if (newSuspensionStatus) {
+      console.log(`updateUserSuspensionStatusAction: User ${userId} is being suspended. Preparing email notification.`);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        const userProfile = userDocSnap.data() as UserProfile;
+        if (userProfile.email) {
+          const settingsResult = await getPlatformSettingsAction();
+          const emailPayload = {
+            fullName: userProfile.displayName || userProfile.firstName || "Customer",
+            bankName: settingsResult.settings?.platformName || "Wohana Funds",
+            emailLogoImageUrl: settingsResult.settings?.emailLogoImageUrl,
+            supportEmail: settingsResult.settings?.supportEmail,
+            // suspensionReason: "Your account has been suspended due to a violation of our terms of service." // Example reason
+          };
+          console.log(`updateUserSuspensionStatusAction: Email payload for suspension:`, emailPayload);
+          try {
+            const emailContent = await getEmailTemplateAndSubject("ACCOUNT_SUSPENDED", emailPayload);
+            if (emailContent.html) {
+              console.log(`updateUserSuspensionStatusAction: Attempting to send suspension email to ${userProfile.email}. Subject: "${emailContent.subject}"`);
+              sendTransactionalEmail({
+                to: userProfile.email,
+                subject: emailContent.subject,
+                htmlBody: emailContent.html,
+                textBody: `Dear ${emailPayload.fullName}, your account with ${emailPayload.bankName} has been suspended. Please contact support at ${emailPayload.supportEmail} for more information.`
+              }).then(emailRes => {
+                if (emailRes.success) {
+                  console.log(`updateUserSuspensionStatusAction: Suspension email sent successfully to ${userProfile.email}.`);
+                } else {
+                  console.error(`updateUserSuspensionStatusAction: Failed to send suspension email to ${userProfile.email}: ${emailRes.error}`);
+                }
+              }).catch(emailErr => {
+                 console.error(`updateUserSuspensionStatusAction: Exception sending suspension email to ${userProfile.email}:`, emailErr);
+              });
+            } else {
+                console.warn(`updateUserSuspensionStatusAction: HTML content for ACCOUNT_SUSPENDED email was null or empty.`);
+            }
+          } catch(templateError: any) {
+              console.error(`updateUserSuspensionStatusAction: Error preparing suspension email content for ${userProfile.email}:`, templateError.message, JSON.stringify(templateError, Object.getOwnPropertyNames(templateError)));
+          }
+        } else {
+          console.warn(`updateUserSuspensionStatusAction: User ${userId} has no email. Cannot send suspension notification.`);
+        }
+      } else {
+         console.warn(`updateUserSuspensionStatusAction: User profile for ${userId} not found when trying to send suspension email.`);
+      }
+    }
+
     revalidatePath("/admin/users");
     return { 
       success: true, 
@@ -889,3 +936,5 @@ export async function adminReplyToSupportTicketAction(
     return { success: false, message: "Failed to send reply.", error: error.message };
   }
 }
+
+    

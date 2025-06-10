@@ -29,6 +29,8 @@ interface EmailTemplateProps {
   supportEmail?: string;
   // OTP Specific
   otp?: string;
+  // Account Suspension
+  suspensionReason?: string; 
 }
 
 // Common styles
@@ -473,3 +475,51 @@ export function otpEmailTemplate({
 </html>
   `;
 }
+
+export function accountSuspendedEmailTemplate({
+  fullName = "Valued Customer",
+  bankName = "Wohana Funds",
+  emailLogoImageUrl,
+  suspensionReason, // Optional: specific reason for suspension
+  supportEmail,
+  loginUrl = "#", // Link to login page or support page
+}: EmailTemplateProps): string {
+  const logoDisplay = getLogoDisplay(bankName, emailLogoImageUrl);
+  const footerHtml = getFooter(bankName, supportEmail);
+  const effectiveSupportEmail = supportEmail || `support@${bankName.toLowerCase().replace(/\s+/g, '')}.com`;
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Important: Your Account Has Been Suspended - ${bankName}</title>
+</head>
+<body style="${bodyStyle}">
+  <div style="${containerStyle}">
+    <div style="${headerStyle}">
+      ${logoDisplay}
+    </div>
+    <div style="${contentStyle}">
+      <p style="${pStyle} font-size:18px; font-weight:bold; color:#D32F2F;">Account Suspension Notice</p>
+      <p style="${pStyle}">Dear <span style="${capitalizeStyle}">${fullName}</span>,</p>
+      <p style="${pStyle}">We are writing to inform you that your account with <strong style="${strongStyle}">${bankName}</strong> has been temporarily suspended.</p>
+      ${suspensionReason ? `<p style="${pStyle}">Reason for suspension: ${suspensionReason}</p>` : ''}
+      <p style="${pStyle}">During this suspension, your access to certain services may be restricted. We understand this may cause inconvenience and we appreciate your understanding.</p>
+      <p style="${pStyle}">To learn more about this suspension or to seek resolution, please contact our support team immediately at <a href="mailto:${effectiveSupportEmail}" style="${footerLinkStyle}">${effectiveSupportEmail}</a>.</p>
+      <p style="${pStyle}">You may still be able to log in to view your account status or basic information:</p>
+      <div style="${buttonContainerStyle}">
+        <a href="${loginUrl}" style="${buttonStyle}">Log In to Your Account</a>
+      </div>
+      <p style="${pStyle}">We are committed to resolving this matter with you. Please reach out to our support team at your earliest convenience.</p>
+      <p style="${pStyle}">Sincerely,<br>The ${bankName} Team</p>
+    </div>
+    ${footerHtml}
+  </div>
+</body>
+</html>
+  `;
+}
+
+    
