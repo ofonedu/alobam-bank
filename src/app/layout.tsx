@@ -59,7 +59,7 @@ export default function RootLayout({
                 var s,c,o=smartsupp=function(){ o._.push(arguments)};o._=[];
                 s=d.getElementsByTagName('script')[0];c=d.createElement('script');
                 c.type='text/javascript';c.charset='utf-8';c.async=true;
-                c.src='https://www.smartsuppchat.com/loader.js?';s.parentNode.insertBefore(c,s);
+                c.src='https://www.smartsupp.com/loader.js?';s.parentNode.insertBefore(c,s);
               })(document);
             `,
           }}
@@ -67,6 +67,26 @@ export default function RootLayout({
         <noscript>
           Powered by <a href="https://www.smartsupp.com" target="_blank" rel="noopener noreferrer">Smartsupp</a>
         </noscript>
+
+        {/* Tawk.to Live Chat script - IMPORTANT: Replace YOUR_TAWK_PROPERTY_ID and YOUR_TAWK_WIDGET_ID */}
+        <script
+          id="tawkto-script"
+          type="text/javascript"
+          dangerouslySetInnerHTML={{
+            __html: `
+              var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+              (function(){
+              var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+              s1.async=true;
+              s1.src='https://embed.tawk.to/YOUR_TAWK_PROPERTY_ID/YOUR_TAWK_WIDGET_ID';
+              s1.charset='UTF-8';
+              s1.setAttribute('crossorigin','*');
+              s0.parentNode.insertBefore(s1,s0);
+              })();
+            `,
+          }}
+        />
+        {/* End of Tawk.to Script */}
       </head>
       <body className={`antialiased`}>
         <ThemeProvider
