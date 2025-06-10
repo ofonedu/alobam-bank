@@ -500,6 +500,14 @@ export async function fetchUserTransactionsAction(userId: string, count?: number
     return { success: true, transactions };
   } catch (error: any) {
     console.error("Error fetching user transactions (fetchUserTransactionsAction):", error.message, error.stack);
+    // Check for Firestore index missing error
+    if (error.code === 'failed-precondition' && error.message && error.message.includes('firestore/indexes?create_composite=')) {
+        const indexCreationLinkMatch = error.message.match(/(https:\/\/console\.firebase\.google\.com\/project\/[^/]+\/firestore\/indexes\?create_composite=[^ ]+)/);
+        const indexCreationLink = indexCreationLinkMatch ? indexCreationLinkMatch[0] : "Please check Firestore console for index creation instructions.";
+        const specificError = `Failed to fetch transactions. Firestore requires a composite index for this query. Please create it by visiting: ${indexCreationLink}`;
+        console.error(specificError);
+        return { success: false, error: specificError };
+    }
     return { success: false, error: `Failed to fetch transactions. Server error: ${error.message}` };
   }
 }
@@ -677,6 +685,7 @@ export async function submitSupportTicketAction(
     const ticketDocRef = await addDoc(supportTicketsColRef, newTicketData);
 
     revalidatePath("/admin/support");
+    revalidatePath("/dashboard/support"); // Also revalidate user's support page
 
     return {
       success: true,
@@ -740,22 +749,69 @@ export async function fetchUserSupportTicketsAction(userId: string): Promise<Fet
     const querySnapshot = await getDocs(q);
     const tickets: UserSupportTicket[] = querySnapshot.docs.map((docSnap) => {
       const data = docSnap.data();
+      
       // Ensure replies array exists and is an array, defaulting to empty if not
-      const replies: SupportTicketReply[] = (Array.isArray(data.replies) ? data.replies : []).map(reply => ({
-        ...reply,
-        timestamp: (reply.timestamp as Timestamp)?.toDate ? (reply.timestamp as Timestamp).toDate() : new Date(reply.timestamp)
-      }));
+      // Also, ensure each reply has essential fields and correct timestamp format
+      const replies: SupportTicketReply[] = (Array.isArray(data.replies) ? data.replies : []).map(reply => {
+        let replyTimestamp = new Date(); // Default to now if parsing fails
+        if (reply.timestamp && (reply.timestamp as Timestamp)?.toDate) {
+          replyTimestamp = (reply.timestamp as Timestamp).toDate();
+        } else if (reply.timestamp instanceof Date) {
+          replyTimestamp = reply.timestamp;
+        } else if (reply.timestamp) {
+            try {
+                const parsedDate = new Date(reply.timestamp as string | number);
+                if (!isNaN(parsedDate.getTime())) {
+                    replyTimestamp = parsedDate;
+                }
+            } catch (e) { /* Use default if parsing fails */ }
+        }
+
+        return {
+          id: reply.id || doc(collection(db, "dummy")).id, // Generate a fallback ID if missing
+          authorId: reply.authorId || 'unknown_author',
+          authorName: reply.authorName || 'Unknown Author',
+          message: reply.message || '[No message content]',
+          timestamp: replyTimestamp,
+          authorRole: reply.authorRole,
+        };
+      });
+
+      let createdAtDate = new Date();
+      if (data.createdAt && (data.createdAt as Timestamp)?.toDate) {
+        createdAtDate = (data.createdAt as Timestamp).toDate();
+      } else if (data.createdAt instanceof Date) {
+        createdAtDate = data.createdAt;
+      } else if (data.createdAt) {
+          try {
+            const parsed = new Date(data.createdAt as string | number);
+            if(!isNaN(parsed.getTime())) createdAtDate = parsed;
+          } catch(e) { /* Use default */ }
+      }
+
+      let updatedAtDate = new Date();
+       if (data.updatedAt && (data.updatedAt as Timestamp)?.toDate) {
+        updatedAtDate = (data.updatedAt as Timestamp).toDate();
+      } else if (data.updatedAt instanceof Date) {
+        updatedAtDate = data.updatedAt;
+      } else if (data.updatedAt) {
+          try {
+            const parsed = new Date(data.updatedAt as string | number);
+            if(!isNaN(parsed.getTime())) updatedAtDate = parsed;
+          } catch(e) { /* Use default */ }
+      }
+
 
       return {
         id: docSnap.id,
-        userId: data.userId,
-        userName: data.userName,
-        userEmail: data.userEmail,
-        subject: data.subject,
-        message: data.message,
-        status: data.status,
-        createdAt: (data.createdAt as Timestamp)?.toDate ? (data.createdAt as Timestamp).toDate() : new Date(data.createdAt),
-        updatedAt: (data.updatedAt as Timestamp)?.toDate ? (data.updatedAt as Timestamp).toDate() : new Date(data.updatedAt),
+        userId: data.userId || "", // Fallback for userId
+        userName: data.userName || "N/A",
+        userEmail: data.userEmail || "N/A",
+        subject: data.subject || "No Subject",
+        message: data.message || "No Message",
+        status: data.status || "open", // Fallback for status
+        createdAt: createdAtDate,
+        updatedAt: updatedAtDate,
         priority: data.priority,
         replies: replies,
       } as UserSupportTicket;
@@ -763,7 +819,15 @@ export async function fetchUserSupportTicketsAction(userId: string): Promise<Fet
     return { success: true, tickets };
   } catch (error: any) {
     console.error("Error fetching user support tickets:", error);
-    return { success: false, error: "Failed to fetch support tickets." };
+    // Check for Firestore index missing error
+    if (error.code === 'failed-precondition' && error.message && error.message.includes('firestore/indexes?create_composite=')) {
+        const indexCreationLinkMatch = error.message.match(/(https:\/\/console\.firebase\.google\.com\/project\/[^/]+\/firestore\/indexes\?create_composite=[^ ]+)/);
+        const indexCreationLink = indexCreationLinkMatch ? indexCreationLinkMatch[0] : "Please check Firestore console for index creation instructions.";
+        const specificError = `Failed to fetch support tickets. Firestore requires a composite index for this query. Please create it by visiting: ${indexCreationLink}`;
+        console.error(specificError);
+        return { success: false, error: specificError };
+    }
+    return { success: false, error: `Failed to fetch support tickets. An unexpected error occurred: ${error.message}` };
   }
 }
 
