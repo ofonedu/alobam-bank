@@ -7,10 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Search, LifeBuoy, MessageSquare, Edit, Loader2, AlertTriangle } from "lucide-react";
-import type { AdminSupportTicket } from "@/types";
-import { collection, getDocs, Timestamp, query, orderBy } from "firebase/firestore";
+import type { AdminSupportTicket, UserProfile } from "@/types";
+import { collection, getDocs, Timestamp, query, orderBy, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AdminSupportTicketDetailModal } from "./components/AdminSupportTicketDetailModal";
+import { useAuth } from "@/hooks/use-auth";
+
 
 const TicketStatusBadge = ({ status }: { status: AdminSupportTicket['status'] }) => {
   switch (status) {
@@ -55,43 +58,77 @@ const formatDateDisplay = (dateInput: Date | Timestamp | undefined): string => {
   };
 
 export default function AdminSupportPage() {
+  const { user, userProfile } = useAuth();
   const [tickets, setTickets] = useState<AdminSupportTicket[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<AdminSupportTicket | null>(null);
+
+  const fetchTickets = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const ticketsCollectionRef = collection(db, "supportTickets");
+      const q = query(ticketsCollectionRef, orderBy("updatedAt", "desc")); // Order by updatedAt to see recent activity
+      const querySnapshot = await getDocs(q);
+      const fetchedTickets: AdminSupportTicket[] = querySnapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        
+        const processTimestamp = (field: any): Date | Timestamp => {
+            if (!field) return Timestamp.now(); // Fallback, should ideally not happen for createdAt/updatedAt
+            if ((field as Timestamp)?.toDate) return (field as Timestamp); // Already a Firestore Timestamp
+            if (field instanceof Date) return Timestamp.fromDate(field); // Convert JS Date to Firestore Timestamp
+            // Try to parse if it's a string/number, then convert to Firestore Timestamp
+            try {
+                const parsedDate = new Date(field as string | number);
+                return Timestamp.fromDate(parsedDate);
+            } catch {
+                return Timestamp.now(); // Fallback for unparsable
+            }
+        };
+
+        const processReplies = (repliesArray: any[] = []): SupportTicketReply[] => {
+            return repliesArray.map(reply => ({
+                ...reply,
+                timestamp: processTimestamp(reply.timestamp)
+            }));
+        };
+        
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: processTimestamp(data.createdAt),
+          updatedAt: processTimestamp(data.updatedAt),
+          replies: processReplies(data.replies)
+        } as AdminSupportTicket;
+      });
+      setTickets(fetchedTickets);
+    } catch (err: any) {
+      console.error("Error fetching support tickets:", err);
+      setError("Failed to fetch support tickets. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchTickets = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const ticketsCollectionRef = collection(db, "supportTickets");
-        const q = query(ticketsCollectionRef, orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
-        const fetchedTickets: AdminSupportTicket[] = querySnapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: (data.createdAt as Timestamp)?.toDate ? (data.createdAt as Timestamp).toDate() : new Date(data.createdAt as Date | string | number),
-            updatedAt: (data.updatedAt as Timestamp)?.toDate ? (data.updatedAt as Timestamp).toDate() : new Date(data.updatedAt as Date | string | number),
-            replies: (data.replies || []).map((reply: any) => ({
-                ...reply,
-                timestamp: (reply.timestamp as Timestamp)?.toDate ? (reply.timestamp as Timestamp).toDate() : new Date(reply.timestamp as Date | string | number)
-            }))
-          } as AdminSupportTicket;
-        });
-        setTickets(fetchedTickets);
-      } catch (err: any) {
-        console.error("Error fetching support tickets:", err);
-        setError("Failed to fetch support tickets. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchTickets();
   }, []);
+
+  const handleOpenModal = (ticket: AdminSupportTicket) => {
+    setSelectedTicket(ticket);
+    setIsModalOpen(true);
+  };
+
+  const handleModalActionComplete = () => {
+    setIsModalOpen(false);
+    setSelectedTicket(null);
+    fetchTickets(); // Refresh the list
+  };
+
 
   const filteredTickets = tickets.filter(ticket =>
     ticket.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -113,7 +150,7 @@ export default function AdminSupportPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Ticket Inbox ({isLoading ? "Loading..." : filteredTickets.length})</CardTitle>
-          <CardDescription>Search and manage support tickets. (Actions are placeholders)</CardDescription>
+          <CardDescription>Search, view, and manage support tickets.</CardDescription>
           <div className="pt-4">
             <div className="relative w-full max-w-lg">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -159,7 +196,7 @@ export default function AdminSupportPage() {
                 <TableBody>
                   {filteredTickets.map((ticket) => (
                     <TableRow key={ticket.id}>
-                      <TableCell className="font-mono text-xs">{ticket.id}</TableCell>
+                      <TableCell className="font-mono text-xs">{ticket.id.substring(0,10)}...</TableCell>
                       <TableCell>
                         <div>{ticket.userName}</div>
                         <div className="text-xs text-muted-foreground">{ticket.userEmail}</div>
@@ -169,8 +206,10 @@ export default function AdminSupportPage() {
                       <TableCell><PriorityBadge priority={ticket.priority} /></TableCell>
                       <TableCell>{formatDateDisplay(ticket.updatedAt)}</TableCell>
                       <TableCell className="text-center space-x-1">
-                        <Button variant="ghost" size="icon" title="View/Reply Ticket" disabled><MessageSquare className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" title="Edit Ticket (e.g. Status, Priority)" disabled><Edit className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="sm" onClick={() => handleOpenModal(ticket)}>
+                            <MessageSquare className="mr-2 h-4 w-4" /> View/Reply
+                        </Button>
+                        {/* <Button variant="ghost" size="icon" title="Edit Ticket (e.g. Status, Priority)" disabled><Edit className="h-4 w-4" /></Button> */}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -180,6 +219,17 @@ export default function AdminSupportPage() {
           )}
         </CardContent>
       </Card>
+      {selectedTicket && (
+        <AdminSupportTicketDetailModal
+          isOpen={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          ticket={selectedTicket}
+          onActionComplete={handleModalActionComplete}
+          adminUserId={user?.uid}
+          adminName={userProfile?.displayName || user?.email || "Admin"}
+        />
+      )}
     </div>
   );
 }
+

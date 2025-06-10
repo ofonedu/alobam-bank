@@ -1,8 +1,9 @@
+
 // src/lib/actions/admin-actions.ts
 "use server";
 
 import { db, auth as firebaseAuth } from "@/lib/firebase"; 
-import type { UserProfile, Loan, Transaction as TransactionType, KYCData, AdminAddUserFormData } from "@/types";
+import type { UserProfile, Loan, Transaction as TransactionType, KYCData, AdminAddUserFormData, AdminSupportTicket, SupportTicketReply } from "@/types";
 import {
   doc,
   updateDoc,
@@ -17,6 +18,8 @@ import {
   getCountFromServer,
   setDoc,
   deleteDoc, 
+  arrayUnion,
+  serverTimestamp,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { AdminAddUserSchema } from "../schemas";
@@ -821,5 +824,68 @@ export async function deleteUserAccountAction(userId: string): Promise<DeleteUse
       message: "Failed to delete user data from Firestore.",
       error: error.message,
     };
+  }
+}
+
+
+// --- Admin Support Ticket Actions ---
+interface AdminSupportTicketActionResult {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export async function adminReplyToSupportTicketAction(
+  ticketId: string,
+  replyText: string,
+  adminName: string = "Admin",
+  adminUserId?: string, // Optional: if you want to log which admin replied
+  newStatus?: AdminSupportTicket['status']
+): Promise<AdminSupportTicketActionResult> {
+  if (!ticketId || !replyText.trim()) {
+    return { success: false, message: "Ticket ID and reply text are required." };
+  }
+
+  try {
+    const ticketDocRef = doc(db, "supportTickets", ticketId);
+
+    const newReply: SupportTicketReply = {
+      id: doc(collection(db, "dummy")).id, // Generate a unique ID for the reply
+      authorId: adminUserId || "admin_system",
+      authorName: adminName,
+      authorRole: "admin",
+      message: replyText.trim(),
+      timestamp: serverTimestamp() as Timestamp,
+    };
+
+    const updateData: Partial<AdminSupportTicket> & { updatedAt: Timestamp, replies?: any } = {
+      updatedAt: serverTimestamp() as Timestamp,
+      replies: arrayUnion(newReply)
+    };
+
+    if (newStatus) {
+      updateData.status = newStatus;
+    } else {
+      // If admin is replying, and current status is 'open' or 'pending_admin_reply',
+      // change to 'pending_user_reply'
+      const ticketSnap = await getDoc(ticketDocRef);
+      if (ticketSnap.exists()) {
+        const currentTicketData = ticketSnap.data() as AdminSupportTicket;
+        if (currentTicketData.status === 'open' || currentTicketData.status === 'pending_admin_reply') {
+          updateData.status = 'pending_user_reply';
+        }
+      }
+    }
+    
+    await updateDoc(ticketDocRef, updateData);
+    
+    // TODO: Send email notification to user about the new reply
+
+    revalidatePath("/admin/support");
+    return { success: true, message: "Reply sent and ticket updated." };
+
+  } catch (error: any) {
+    console.error("Error replying to support ticket:", error);
+    return { success: false, message: "Failed to send reply.", error: error.message };
   }
 }

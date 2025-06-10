@@ -123,24 +123,28 @@ export interface AdminTransactionView extends Transaction {
   userEmail?: string;
 }
 
+export interface SupportTicketReply {
+  id: string; // Unique ID for the reply itself
+  authorId: string; // UID of the admin or user who wrote the reply
+  authorName: string; // Display name of the author
+  message: string;
+  timestamp: Date | Timestamp;
+  authorRole?: "admin" | "user"; // To distinguish between admin and user replies
+}
+
 export interface AdminSupportTicket {
   id: string;
   userId: string;
   userName: string;
   userEmail: string;
   subject: string;
-  message: string;
+  message: string; // Initial message from the user
   status: "open" | "pending_admin_reply" | "pending_user_reply" | "closed";
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
   priority?: "low" | "medium" | "high";
-  assignedTo?: string;
-  replies?: Array<{
-    authorId: string;
-    authorName: string;
-    message: string;
-    timestamp: Date | Timestamp;
-  }>;
+  assignedTo?: string; // Admin ID
+  replies?: SupportTicketReply[];
 }
 
 export interface AccountType {
@@ -532,4 +536,11 @@ export interface TransactionReceiptModalProps {
   receiptDetails: ReceiptDetails | null;
 }
 
-    
+export interface AdminSupportTicketDetailModalProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  ticket: AdminSupportTicket | null;
+  onActionComplete: () => void; // To refresh the list after an action
+  adminUserId?: string; // Optional adminId if you want to record who replied
+  adminName?: string; // Optional adminName
+}
