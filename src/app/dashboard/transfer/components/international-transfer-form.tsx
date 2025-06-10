@@ -23,14 +23,15 @@ import { Loader2, Globe } from "lucide-react";
 import { COTConfirmationDialog } from "./cot-confirmation-dialog";
 import { IMFAuthorizationDialog } from "./imf-authorization-dialog";
 import { TaxClearanceDialog } from "./tax-clearance-dialog";
-import { OtpVerificationDialog } from "./otp-verification-dialog"; // Import OTP dialog
+import { OtpVerificationDialog } from "./otp-verification-dialog"; 
 import { useAuth } from "@/hooks/use-auth";
 import { recordTransferAction } from "@/lib/actions";
 import { getPlatformSettingsAction } from "@/lib/actions/admin-settings-actions";
-import { generateAndSendOtpAction } from "@/lib/actions/otp-actions"; // Import OTP generation
-import type { PlatformSettings, TransferAuthorizations } from "@/types";
+import { generateAndSendOtpAction } from "@/lib/actions/otp-actions"; 
+import type { PlatformSettings, TransferAuthorizations, ReceiptDetails } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
+import { TransactionReceiptModal } from "@/components/transfer/TransactionReceiptModal";
 
 export function InternationalTransferForm() {
   const { toast } = useToast();
@@ -44,6 +45,8 @@ export function InternationalTransferForm() {
   const [showCOTDialog, setShowCOTDialog] = useState(false);
   const [showIMFDialog, setShowIMFDialog] = useState(false);
   const [showTaxDialog, setShowTaxDialog] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptDetails, setReceiptDetails] = useState<ReceiptDetails | null>(null);
 
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -96,6 +99,8 @@ export function InternationalTransferForm() {
     setShowCOTDialog(false);
     setShowIMFDialog(false);
     setShowTaxDialog(false);
+    setShowReceiptModal(false);
+    setReceiptDetails(null);
     form.reset();
     setIsSubmittingInitialForm(false);
   };
@@ -238,20 +243,38 @@ export function InternationalTransferForm() {
 
     const result = await recordTransferAction(user.uid, dataToFinalize, authCodesToFinalize, platformSettings?.cotPercentage);
 
-    if (result.success && result.newBalance !== undefined) {
+    if (result.success && result.newBalance !== undefined && result.transactionId) {
       toast({
-        title: "Transfer Successful",
-        description: `International transfer of ${formatCurrency(dataToFinalize.amount, dataToFinalize.currency)} to ${dataToFinalize.recipientName} processed. New balance (approx.): ${formatCurrency(result.newBalance, userProfile.primaryCurrency)}.`,
+        title: "Transfer Initiated",
+        description: `International transfer to ${dataToFinalize.recipientName} is being processed.`,
       });
       await fetchUserProfile(user.uid); 
+      setReceiptDetails({
+        transactionId: result.transactionId,
+        date: new Date(),
+        amount: dataToFinalize.amount,
+        currency: dataToFinalize.currency || "USD",
+        recipientName: dataToFinalize.recipientName,
+        recipientAccountNumberIBAN: dataToFinalize.recipientAccountNumberIBAN,
+        bankName: dataToFinalize.bankName,
+        swiftBic: dataToFinalize.swiftBic,
+        country: dataToFinalize.country,
+        transferType: "International",
+        newBalance: result.newBalance,
+        userPrimaryCurrency: userProfile.primaryCurrency || "USD",
+        remarks: dataToFinalize.remarks,
+      });
+      setShowReceiptModal(true);
+      form.reset(); // Reset form fields but not the entire flow yet
     } else {
       toast({
         title: "Transfer Failed",
         description: result.message || "An unexpected error occurred.",
         variant: "destructive",
       });
+      resetTransferFlow();
     }
-    resetTransferFlow();
+    setIsSubmittingInitialForm(false); // Moved here
   }
 
   const handleDialogCancel = () => {
@@ -419,7 +442,7 @@ export function InternationalTransferForm() {
           <OtpVerificationDialog
             isOpen={showOTPDialog}
             onOpenChange={(open) => {
-                if (!open) { handleDialogCancel(); }
+                if (!open && !showReceiptModal) { handleDialogCancel(); }
                 setShowOTPDialog(open);
             }}
             userId={user.uid}
@@ -431,7 +454,7 @@ export function InternationalTransferForm() {
           <COTConfirmationDialog
             isOpen={showCOTDialog}
             onOpenChange={(open) => {
-                if (!open) { handleDialogCancel(); } 
+                if (!open && !showReceiptModal) { handleDialogCancel(); } 
                 setShowCOTDialog(open);
             }}
             transferData={currentTransferData}
@@ -442,7 +465,7 @@ export function InternationalTransferForm() {
           <IMFAuthorizationDialog
             isOpen={showIMFDialog}
             onOpenChange={(open) => {
-                if (!open) { handleDialogCancel(); }
+                if (!open && !showReceiptModal) { handleDialogCancel(); }
                 setShowIMFDialog(open);
             }}
             onConfirm={handleIMFAuthorized}
@@ -451,7 +474,7 @@ export function InternationalTransferForm() {
           <TaxClearanceDialog
             isOpen={showTaxDialog}
             onOpenChange={(open) => {
-                if (!open) { handleDialogCancel(); }
+                if (!open && !showReceiptModal) { handleDialogCancel(); }
                 setShowTaxDialog(open);
             }}
             onConfirm={handleTaxCodeEntered}
@@ -459,6 +482,16 @@ export function InternationalTransferForm() {
           />
         </>
       )}
+      <TransactionReceiptModal
+        isOpen={showReceiptModal}
+        onOpenChange={(open) => {
+            setShowReceiptModal(open);
+            if (!open) { // If receipt modal is closed, fully reset the flow.
+                resetTransferFlow();
+            }
+        }}
+        receiptDetails={receiptDetails}
+      />
     </>
   );
 }

@@ -509,4 +509,27 @@ export interface DeleteUserDialogProps {
   onConfirmDelete: () => void;
 }
 
+export interface ReceiptDetails {
+  transactionId?: string;
+  date: Date;
+  amount: number;
+  currency: string;
+  recipientName: string;
+  recipientAccountNumber?: string; // For local
+  recipientAccountNumberIBAN?: string; // For international
+  bankName?: string;
+  swiftBic?: string; // For international
+  country?: string; // For international
+  transferType: "Local" | "International";
+  newBalance?: number;
+  userPrimaryCurrency?: string;
+  remarks?: string;
+}
+
+export interface TransactionReceiptModalProps {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  receiptDetails: ReceiptDetails | null;
+}
+
     
