@@ -1,0 +1,187 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "dynamicRoutes": [],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/admin",
+      "regex": "^/admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin(?:/)?$"
+    },
+    {
+      "page": "/admin/authorization-codes",
+      "regex": "^/admin/authorization\\-codes(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/authorization\\-codes(?:/)?$"
+    },
+    {
+      "page": "/admin/financial-ops",
+      "regex": "^/admin/financial\\-ops(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/financial\\-ops(?:/)?$"
+    },
+    {
+      "page": "/admin/kyc",
+      "regex": "^/admin/kyc(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/kyc(?:/)?$"
+    },
+    {
+      "page": "/admin/loans",
+      "regex": "^/admin/loans(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/loans(?:/)?$"
+    },
+    {
+      "page": "/admin/settings",
+      "regex": "^/admin/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/settings(?:/)?$"
+    },
+    {
+      "page": "/admin/settings/account-types",
+      "regex": "^/admin/settings/account\\-types(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/settings/account\\-types(?:/)?$"
+    },
+    {
+      "page": "/admin/settings/email-templates",
+      "regex": "^/admin/settings/email\\-templates(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/settings/email\\-templates(?:/)?$"
+    },
+    {
+      "page": "/admin/settings/landing-page",
+      "regex": "^/admin/settings/landing\\-page(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/settings/landing\\-page(?:/)?$"
+    },
+    {
+      "page": "/admin/support",
+      "regex": "^/admin/support(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/support(?:/)?$"
+    },
+    {
+      "page": "/admin/transactions",
+      "regex": "^/admin/transactions(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/transactions(?:/)?$"
+    },
+    {
+      "page": "/admin/users",
+      "regex": "^/admin/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/users(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/dashboard/kyc",
+      "regex": "^/dashboard/kyc(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/kyc(?:/)?$"
+    },
+    {
+      "page": "/dashboard/loans",
+      "regex": "^/dashboard/loans(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/loans(?:/)?$"
+    },
+    {
+      "page": "/dashboard/profile",
+      "regex": "^/dashboard/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/profile(?:/)?$"
+    },
+    {
+      "page": "/dashboard/support",
+      "regex": "^/dashboard/support(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/support(?:/)?$"
+    },
+    {
+      "page": "/dashboard/transactions",
+      "regex": "^/dashboard/transactions(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/transactions(?:/)?$"
+    },
+    {
+      "page": "/dashboard/transfer",
+      "regex": "^/dashboard/transfer(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/transfer(?:/)?$"
+    },
+    {
+      "page": "/favicon.ico",
+      "regex": "^/favicon\\.ico(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/forgot-password",
+      "regex": "^/forgot\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/forgot\\-password(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/register",
+      "regex": "^/register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "RSC",
+    "varyHeader": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch",
+    "prefetchHeader": "Next-Router-Prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "Next-Router-Segment-Prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  },
+  "rewrites": []
+}
